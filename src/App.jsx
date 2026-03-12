@@ -1,20 +1,9 @@
 import * as React from 'react';
 import * as XLSX from 'xlsx';
+import { getAppBootstrapData, getFallbackAppBootstrapData } from './api/bootstrap.js';
 import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
-import {
-  ADMIN_WEEK_OPTIONS,
-  CURRENT_ATTENDANCE_META,
-  CURRENT_SERVICE_DATE,
-  CURRENT_WEEK_KEY,
-  GROUP_OPTIONS,
-  INITIAL_ATTENDANCE_RECORDS,
-  INITIAL_MEMBERS,
-  INITIAL_NEWCOMER_INTAKES,
-  TOTAL_MEMBER_COUNT,
-} from './data/mockData.js';
-import { getCurrentAttendanceMeta } from './utils/attendanceMeta.js';
 
 const { useEffect, useMemo, useState } = React;
 
@@ -221,67 +210,24 @@ function areFiltersEqual(a, b) {
   );
 }
 
-function runPrototypeTests() {
-  const meta = getCurrentAttendanceMeta(new Date('2026-03-13T12:00:00'));
-  const updated = buildAttendanceUpdate(
-    { attendanceType: 'youth', attendedAt: '11:08' },
-    'member-test',
-    { weekKey: '2026-W11', serviceDate: '2026-03-15' },
-    'adult',
-    'admin',
-    '11:30',
-  );
-
-  const tests = [
-    {
-      name: '금요일 기준 이번 출석 대상 주일을 계산함',
-      pass: meta.serviceDate === '2026-03-15',
-    },
-    {
-      name: '주차 키를 대상 주일 기준으로 계산함',
-      pass: meta.weekKey === '2026-W11',
-    },
-    {
-      name: '관리자 주차 옵션이 여러 주를 제공함',
-      pass: ADMIN_WEEK_OPTIONS.length >= 5,
-    },
-    {
-      name: '초성 검색 시 일치하는 멤버를 반환함',
-      pass: filterMembers(INITIAL_MEMBERS, 'ㄱㅈ').length >= 3,
-    },
-    {
-      name: '출석 타입 변경 시 기존 출석시각을 유지할 수 있음',
-      pass: updated.attendanceType === 'adult' && updated.attendedAt === '11:08',
-    },
-    {
-      name: '현재 주차 출석 기록으로 출석 맵을 구성함',
-      pass: buildAttendanceMap(INITIAL_ATTENDANCE_RECORDS, CURRENT_WEEK_KEY)['member-6'] === '11:08',
-    },
-  ];
-
-  const failed = tests.filter((test) => !test.pass);
-  if (failed.length > 0 && typeof console !== 'undefined') {
-    console.warn('Prototype self-check failed:', failed);
-  }
-}
-
-runPrototypeTests();
+const FALLBACK_BOOTSTRAP = getFallbackAppBootstrapData();
 
 export default function App() {
+  const [appBootstrap, setAppBootstrap] = useState(() => FALLBACK_BOOTSTRAP);
   const defaultAdminFilters = useMemo(
     () => ({
-      weekKeys: [CURRENT_WEEK_KEY],
+      weekKeys: [appBootstrap.currentWeekKey],
       groupId: 'all',
       nameIds: [],
     }),
-    [],
+    [appBootstrap.currentWeekKey],
   );
 
   const [screen, setScreen] = useState(APP_SCREENS.preAttendanceConfirm);
   const [query, setQuery] = useState('');
-  const [members, setMembers] = useState(() => INITIAL_MEMBERS);
-  const [attendanceRecords, setAttendanceRecords] = useState(() => INITIAL_ATTENDANCE_RECORDS);
-  const [newcomerIntakes, setNewcomerIntakes] = useState(() => INITIAL_NEWCOMER_INTAKES);
+  const [members, setMembers] = useState(() => FALLBACK_BOOTSTRAP.members);
+  const [attendanceRecords, setAttendanceRecords] = useState(() => FALLBACK_BOOTSTRAP.attendanceRecords);
+  const [newcomerIntakes, setNewcomerIntakes] = useState(() => FALLBACK_BOOTSTRAP.newcomerIntakes);
   const [confirmTarget, setConfirmTarget] = useState(null);
   const [toast, setToast] = useState('');
   const [showNewMemberModal, setShowNewMemberModal] = useState(false);
@@ -290,7 +236,7 @@ export default function App() {
 
   const [draftFilters, setDraftFilters] = useState(defaultAdminFilters);
   const [appliedFilters, setAppliedFilters] = useState(defaultAdminFilters);
-  const [adminActiveWeekKey, setAdminActiveWeekKey] = useState(CURRENT_WEEK_KEY);
+  const [adminActiveWeekKey, setAdminActiveWeekKey] = useState(FALLBACK_BOOTSTRAP.currentWeekKey);
   const [adminSelectedRowIds, setAdminSelectedRowIds] = useState([]);
   const [adminPendingBulkActionType, setAdminPendingBulkActionType] = useState(null);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -300,10 +246,47 @@ export default function App() {
     memberType: 'visitor',
   });
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadBootstrap() {
+      try {
+        const data = await getAppBootstrapData();
+        if (!active) return;
+
+        setAppBootstrap(data);
+        setMembers(data.members);
+        setAttendanceRecords(data.attendanceRecords);
+        setNewcomerIntakes(data.newcomerIntakes);
+        setDraftFilters((prev) =>
+          prev.weekKeys.length === 1 && prev.weekKeys[0] === FALLBACK_BOOTSTRAP.currentWeekKey
+            ? { ...prev, weekKeys: [data.currentWeekKey] }
+            : prev,
+        );
+        setAppliedFilters((prev) =>
+          prev.weekKeys.length === 1 && prev.weekKeys[0] === FALLBACK_BOOTSTRAP.currentWeekKey
+            ? { ...prev, weekKeys: [data.currentWeekKey] }
+            : prev,
+        );
+        setAdminActiveWeekKey((prev) => (prev === FALLBACK_BOOTSTRAP.currentWeekKey ? data.currentWeekKey : prev));
+      } catch (error) {
+        console.warn('Failed to load bootstrap data, using fallback mock source:', error);
+      }
+    }
+
+    loadBootstrap();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const filtered = useMemo(() => filterMembers(members, query), [members, query]);
-  const currentAttendance = useMemo(() => buildAttendanceMap(attendanceRecords, CURRENT_WEEK_KEY), [attendanceRecords]);
+  const currentAttendance = useMemo(
+    () => buildAttendanceMap(attendanceRecords, appBootstrap.currentWeekKey),
+    [attendanceRecords, appBootstrap.currentWeekKey],
+  );
   const attendanceCount = useMemo(() => Object.values(currentAttendance).filter(Boolean).length, [currentAttendance]);
-  const attendanceRate = Math.round((attendanceCount / TOTAL_MEMBER_COUNT) * 100);
+  const attendanceRate = appBootstrap.totalMemberCount > 0 ? Math.round((attendanceCount / appBootstrap.totalMemberCount) * 100) : 0;
   const resultState = getResultState(query, filtered);
   const canRegisterNewMember = Boolean(newMemberName.trim());
   const isFilterDirty = !areFiltersEqual(draftFilters, appliedFilters);
@@ -311,26 +294,26 @@ export default function App() {
   const appliedResolvedWeekKeys = useMemo(
     () =>
       appliedFilters.weekKeys.includes('ALL')
-        ? ADMIN_WEEK_OPTIONS.map((option) => option.weekKey)
+        ? appBootstrap.attendanceWeeks.map((option) => option.weekKey)
         : appliedFilters.weekKeys,
-    [appliedFilters.weekKeys],
+    [appliedFilters.weekKeys, appBootstrap.attendanceWeeks],
   );
 
   useEffect(() => {
     if (appliedResolvedWeekKeys.length === 0) {
-      setAdminActiveWeekKey(CURRENT_WEEK_KEY);
+      setAdminActiveWeekKey(appBootstrap.currentWeekKey);
       return;
     }
 
     if (!appliedResolvedWeekKeys.includes(adminActiveWeekKey)) {
       setAdminActiveWeekKey(appliedResolvedWeekKeys[0]);
     }
-  }, [appliedResolvedWeekKeys, adminActiveWeekKey]);
+  }, [appliedResolvedWeekKeys, adminActiveWeekKey, appBootstrap.currentWeekKey]);
 
   const activeAdminWeekKey =
-    appliedResolvedWeekKeys.length > 1 ? adminActiveWeekKey : appliedResolvedWeekKeys[0] || CURRENT_WEEK_KEY;
+    appliedResolvedWeekKeys.length > 1 ? adminActiveWeekKey : appliedResolvedWeekKeys[0] || appBootstrap.currentWeekKey;
   const activeAdminWeekMeta =
-    ADMIN_WEEK_OPTIONS.find((option) => option.weekKey === activeAdminWeekKey) || CURRENT_ATTENDANCE_META;
+    appBootstrap.attendanceWeeks.find((option) => option.weekKey === activeAdminWeekKey) || appBootstrap.currentAttendanceMeta;
 
   const draftNameOptions = useMemo(
     () =>
@@ -385,13 +368,13 @@ export default function App() {
   const adminTotalCount = adminRows.length;
   const adminAttendanceRate = adminTotalCount > 0 ? Math.round((adminAttendanceCount / adminTotalCount) * 100) : 0;
   const threeWeekAbsenceRows = useMemo(
-    () => getRecentAbsenceStreakRows(filteredAdminMembers, attendanceRecords, ADMIN_WEEK_OPTIONS, activeAdminWeekKey),
-    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey],
+    () => getRecentAbsenceStreakRows(filteredAdminMembers, attendanceRecords, appBootstrap.attendanceWeeks, activeAdminWeekKey),
+    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey, appBootstrap.attendanceWeeks],
   );
   const threeWeekAbsenceCount = getRecentAbsenceStreakCount(
     filteredAdminMembers,
     attendanceRecords,
-    ADMIN_WEEK_OPTIONS,
+    appBootstrap.attendanceWeeks,
     activeAdminWeekKey,
   );
 
@@ -426,7 +409,7 @@ export default function App() {
 
     applyAttendanceTypeChange({
       memberId: confirmTarget.id,
-      weekMeta: CURRENT_ATTENDANCE_META,
+      weekMeta: appBootstrap.currentAttendanceMeta,
       nextAttendanceType: 'youth',
       source: 'kiosk',
     });
@@ -456,7 +439,7 @@ export default function App() {
 
     applyAttendanceTypeChange({
       memberId,
-      weekMeta: CURRENT_ATTENDANCE_META,
+      weekMeta: appBootstrap.currentAttendanceMeta,
       nextAttendanceType: 'youth',
       source: 'kiosk',
     });
@@ -466,7 +449,7 @@ export default function App() {
       {
         id: createId('intake'),
         name: trimmedName,
-        intakeDate: CURRENT_SERVICE_DATE,
+        intakeDate: appBootstrap.currentServiceDate,
         intakeType: memberType === 'visitor' ? 'visit' : 'registered',
         attendanceLinked: true,
         memberId,
@@ -504,8 +487,10 @@ export default function App() {
       const base = prev.weekKeys.includes('ALL') ? [] : prev.weekKeys;
       const exists = base.includes(value);
       const nextWeekKeys = exists ? base.filter((item) => item !== value) : [...base, value];
-      const normalized = nextWeekKeys.length > 0 ? nextWeekKeys : [CURRENT_WEEK_KEY];
-      const ordered = ADMIN_WEEK_OPTIONS.map((option) => option.weekKey).filter((weekKey) => normalized.includes(weekKey));
+      const normalized = nextWeekKeys.length > 0 ? nextWeekKeys : [appBootstrap.currentWeekKey];
+      const ordered = appBootstrap.attendanceWeeks
+        .map((option) => option.weekKey)
+        .filter((weekKey) => normalized.includes(weekKey));
       return { ...prev, weekKeys: ordered };
     });
   };
@@ -532,11 +517,11 @@ export default function App() {
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters);
     const nextResolved = draftFilters.weekKeys.includes('ALL')
-      ? ADMIN_WEEK_OPTIONS.map((option) => option.weekKey)
+      ? appBootstrap.attendanceWeeks.map((option) => option.weekKey)
       : draftFilters.weekKeys;
 
     if (!nextResolved.includes(adminActiveWeekKey)) {
-      setAdminActiveWeekKey(nextResolved[0] || CURRENT_WEEK_KEY);
+      setAdminActiveWeekKey(nextResolved[0] || appBootstrap.currentWeekKey);
     }
 
     setAdminSelectedRowIds([]);
@@ -618,7 +603,7 @@ export default function App() {
   const handleAddMemberSave = () => {
     if (!addMemberDraft.name.trim() || !addMemberDraft.groupId) return;
 
-    const selectedGroup = GROUP_OPTIONS.find((group) => group.id === addMemberDraft.groupId);
+    const selectedGroup = appBootstrap.groups.find((group) => group.id === addMemberDraft.groupId);
     const memberId = createId('member');
     const memberType = addMemberDraft.groupId === 'group-newcomer' ? addMemberDraft.memberType : 'registered';
 
@@ -639,7 +624,7 @@ export default function App() {
         {
           id: createId('intake'),
           name: addMemberDraft.name.trim(),
-          intakeDate: CURRENT_SERVICE_DATE,
+          intakeDate: appBootstrap.currentServiceDate,
           intakeType: memberType === 'visitor' ? 'visit' : 'registered',
           attendanceLinked: false,
           memberId,
@@ -672,26 +657,19 @@ export default function App() {
     );
   };
 
-  const adminWeekOptions = ADMIN_WEEK_OPTIONS.map((option) => ({
+  const adminWeekOptions = appBootstrap.attendanceWeeks.map((option) => ({
     value: option.weekKey,
     label: option.adminLabel,
   }));
 
-  const adminGroupOptions = GROUP_OPTIONS.map((group) => ({
-    value: group.id,
-    label: group.name,
-  }));
-
-  const addMemberGroupOptions = GROUP_OPTIONS.filter((group) => group.id !== 'all').map((group) => ({
-    value: group.id,
-    label: group.name,
-  }));
+  const adminGroupOptions = appBootstrap.groupFilterOptions;
+  const addMemberGroupOptions = appBootstrap.addMemberGroupOptions;
 
   if (screen === APP_SCREENS.preAttendanceConfirm) {
     return (
       <PreAttendanceConfirmScreen
         accentColor={ACCENT_COLOR}
-        attendanceMeta={CURRENT_ATTENDANCE_META}
+        attendanceMeta={appBootstrap.currentAttendanceMeta}
         onStart={() => setScreen(APP_SCREENS.attendanceKiosk)}
       />
     );
@@ -768,7 +746,7 @@ export default function App() {
       accentColor={ACCENT_COLOR}
       attendance={currentAttendance}
       attendanceCount={attendanceCount}
-      attendanceMeta={CURRENT_ATTENDANCE_META}
+      attendanceMeta={appBootstrap.currentAttendanceMeta}
       attendanceRate={attendanceRate}
       canRegisterNewMember={canRegisterNewMember}
       confirmTarget={confirmTarget}
@@ -791,7 +769,7 @@ export default function App() {
       resultState={resultState}
       showNewMemberModal={showNewMemberModal}
       toast={toast}
-      totalMemberCount={TOTAL_MEMBER_COUNT}
+      totalMemberCount={appBootstrap.totalMemberCount}
     />
   );
 }

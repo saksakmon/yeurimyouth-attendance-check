@@ -16,6 +16,23 @@ export const GROUP_OPTIONS = [
   { id: 'group-newcomer', name: '새가족숲' },
 ];
 
+export const MOCK_GROUPS = [
+  { id: 'group-love', name: '사랑숲', group_type: 'regular', created_at: '2026-01-05T00:00:00+09:00' },
+  { id: 'group-grace', name: '은혜숲', group_type: 'regular', created_at: '2026-01-05T00:00:00+09:00' },
+  { id: 'group-newcomer', name: '새가족숲', group_type: 'newcomer', created_at: '2026-01-05T00:00:00+09:00' },
+];
+
+export const MOCK_ATTENDANCE_WEEKS = ADMIN_WEEK_OPTIONS.map((week, index) => ({
+  id: `attendance-week-${index + 1}`,
+  week_key: week.weekKey,
+  sunday_date: week.serviceDate,
+  label: week.adminLabel,
+  is_current: index === 0,
+  created_at: `${week.serviceDate}T00:00:00+09:00`,
+}));
+
+const ATTENDANCE_WEEK_ID_BY_KEY = Object.fromEntries(MOCK_ATTENDANCE_WEEKS.map((week) => [week.week_key, week.id]));
+
 /**
  * @typedef {Object} Member
  * @property {string} id
@@ -58,6 +75,16 @@ export const INITIAL_MEMBERS = [
   { id: 'member-8', name: '이은수', memberType: 'visitor', groupId: 'group-newcomer', groupName: '새가족숲' },
 ];
 
+export const MOCK_MEMBERS = INITIAL_MEMBERS.map((member) => ({
+  id: member.id,
+  name: member.name,
+  member_type: member.memberType,
+  group_id: member.groupId,
+  is_active: true,
+  created_at: '2026-01-12T00:00:00+09:00',
+  updated_at: '2026-03-13T00:00:00+09:00',
+}));
+
 /** @type {AttendanceRecord[]} */
 export const INITIAL_ATTENDANCE_RECORDS = [
   { id: 'attendance-1', memberId: 'member-6', weekKey: CURRENT_WEEK.weekKey, serviceDate: CURRENT_WEEK.serviceDate, attendanceType: 'youth', attendedAt: '11:08', source: 'admin' },
@@ -74,6 +101,29 @@ export const INITIAL_ATTENDANCE_RECORDS = [
   { id: 'attendance-12', memberId: 'member-1', weekKey: PREVIOUS_WEEK_4.weekKey, serviceDate: PREVIOUS_WEEK_4.serviceDate, attendanceType: 'youth', attendedAt: '11:16', source: 'admin' },
   { id: 'attendance-13', memberId: 'member-4', weekKey: PREVIOUS_WEEK_4.weekKey, serviceDate: PREVIOUS_WEEK_4.serviceDate, attendanceType: 'adult', attendedAt: '10:02', source: 'admin' },
   { id: 'attendance-14', memberId: 'member-7', weekKey: PREVIOUS_WEEK_5.weekKey, serviceDate: PREVIOUS_WEEK_5.serviceDate, attendanceType: 'absent', attendedAt: null, source: 'admin' },
+];
+
+export const MOCK_ATTENDANCE_RECORDS = INITIAL_ATTENDANCE_RECORDS.map((record) => ({
+  id: record.id,
+  member_id: record.memberId,
+  attendance_week_id: ATTENDANCE_WEEK_ID_BY_KEY[record.weekKey] || null,
+  attendance_type: record.attendanceType,
+  attended_at: record.attendedAt ? `${record.serviceDate}T${record.attendedAt}:00+09:00` : null,
+  source: record.source,
+  note: null,
+  created_at: `${record.serviceDate}T12:00:00+09:00`,
+  updated_at: `${record.serviceDate}T12:00:00+09:00`,
+}));
+
+export const MOCK_ADMIN_USERS = [
+  {
+    id: 'admin-user-1',
+    email: 'admin@example.com',
+    name: '운영 관리자',
+    role: 'admin',
+    is_active: true,
+    created_at: '2026-01-05T00:00:00+09:00',
+  },
 ];
 
 /** @type {NewcomerIntake[]} */
