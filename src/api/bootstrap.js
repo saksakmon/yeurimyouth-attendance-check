@@ -47,32 +47,47 @@ function buildBootstrapPayload({ attendanceRecordRows, attendanceWeekRows, curre
   };
 }
 
-export async function getAppBootstrapData() {
-  const [groupRows, memberRows, attendanceWeekRows, currentAttendanceWeekRow] = await Promise.all([
-    getGroups(),
-    getMembers(),
-    getAttendanceWeeks(),
-    getCurrentAttendanceWeek(),
-  ]);
+function logBootstrapSource(message, payload) {
+  console.info(`[bootstrap] ${message}`, payload || '');
+}
 
-  if (hasSupabaseEnv && (groupRows.length === 0 || memberRows.length === 0 || attendanceWeekRows.length === 0)) {
+export async function getAppBootstrapData() {
+  if (!hasSupabaseEnv) {
+    logBootstrapSource('falling back to mock source', 'missing supabase env');
     return getFallbackAppBootstrapData();
   }
 
-  const resolvedWeekRows = attendanceWeekRows.length > 0 ? attendanceWeekRows : MOCK_ATTENDANCE_WEEKS;
-  const resolvedCurrentWeek = currentAttendanceWeekRow || resolvedWeekRows.find((week) => week.is_current) || resolvedWeekRows[0] || null;
-  const attendanceRecordRows = (
-    await Promise.all(resolvedWeekRows.map((week) => getAttendanceRecordsByWeek(week.id)))
-  ).flat();
+  try {
+    const [groupRows, memberRows, attendanceWeekRows, currentAttendanceWeekRow] = await Promise.all([
+      getGroups(),
+      getMembers(),
+      getAttendanceWeeks(),
+      getCurrentAttendanceWeek(),
+    ]);
 
-  return buildBootstrapPayload({
-    attendanceRecordRows,
-    attendanceWeekRows: resolvedWeekRows,
-    currentAttendanceWeekRow: resolvedCurrentWeek,
-    groupRows,
-    memberRows,
-    source: hasSupabaseEnv ? 'supabase' : 'mock',
-  });
+    if (groupRows.length === 0 || memberRows.length === 0 || attendanceWeekRows.length === 0) {
+      logBootstrapSource('falling back to mock source', 'core tables are empty');
+      return getFallbackAppBootstrapData();
+    }
+
+    const resolvedCurrentWeek = currentAttendanceWeekRow || attendanceWeekRows.find((week) => week.is_current) || attendanceWeekRows[0] || null;
+    const attendanceRecordRows = (
+      await Promise.all(attendanceWeekRows.map((week) => getAttendanceRecordsByWeek(week.id)))
+    ).flat();
+
+    logBootstrapSource('using supabase source');
+    return buildBootstrapPayload({
+      attendanceRecordRows,
+      attendanceWeekRows,
+      currentAttendanceWeekRow: resolvedCurrentWeek,
+      groupRows,
+      memberRows,
+      source: 'supabase',
+    });
+  } catch (error) {
+    logBootstrapSource('falling back to mock source', error?.message || error);
+    return getFallbackAppBootstrapData();
+  }
 }
 
 export function getFallbackAppBootstrapData() {

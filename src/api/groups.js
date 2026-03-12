@@ -12,10 +12,8 @@ export async function getGroups() {
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.warn('Falling back to mock groups:', error.message);
-    return MOCK_GROUPS;
+    throw new Error(`[groups] read failed: ${error.message}`);
   }
 
-  return data || MOCK_GROUPS;
+  return data || [];
 }
-

@@ -13,11 +13,10 @@ export async function getAttendanceWeeks() {
     .order('sunday_date', { ascending: false });
 
   if (error) {
-    console.warn('Falling back to mock attendance weeks:', error.message);
-    return sortAttendanceWeeks(MOCK_ATTENDANCE_WEEKS);
+    throw new Error(`[attendance_weeks] read failed: ${error.message}`);
   }
 
-  return sortAttendanceWeeks(data || MOCK_ATTENDANCE_WEEKS);
+  return sortAttendanceWeeks(data || []);
 }
 
 export async function getCurrentAttendanceWeek() {
@@ -32,10 +31,8 @@ export async function getCurrentAttendanceWeek() {
     .maybeSingle();
 
   if (error) {
-    console.warn('Falling back to mock current attendance week:', error.message);
-    return MOCK_ATTENDANCE_WEEKS.find((week) => week.is_current) || MOCK_ATTENDANCE_WEEKS[0] || null;
+    throw new Error(`[attendance_weeks] current read failed: ${error.message}`);
   }
 
-  return data || MOCK_ATTENDANCE_WEEKS.find((week) => week.is_current) || MOCK_ATTENDANCE_WEEKS[0] || null;
+  return data || null;
 }
-

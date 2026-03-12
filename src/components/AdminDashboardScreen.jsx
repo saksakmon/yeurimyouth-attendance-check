@@ -708,7 +708,7 @@ export default function AdminDashboardScreen({
                 />
               </div>
 
-              {addMember.draft.groupId === 'group-newcomer' && (
+              {addMember.isNewcomerGroupSelected && (
                 <div>
                   <label className="admin-field-label">회원 유형</label>
                   <SingleSelectField

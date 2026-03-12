@@ -4,7 +4,7 @@ function toSundayDate(dateString) {
   return new Date(`${dateString}T12:00:00`);
 }
 
-function formatAttendedTime(value) {
+export function formatAttendedTime(value) {
   if (!value) return null;
   if (/^\d{2}:\d{2}$/.test(value)) return value;
 
@@ -79,6 +79,7 @@ export function mapAttendanceRecordRow(row, attendanceWeeksById) {
     serviceDate: attendanceWeek?.serviceDate || null,
     attendanceType: row.attendance_type,
     attendedAt: formatAttendedTime(row.attended_at),
+    attendedAtRaw: row.attended_at || null,
     source: row.source,
     note: row.note || null,
   };
@@ -91,4 +92,3 @@ export function buildGroupFilterOptions(groups) {
 export function buildAddMemberGroupOptions(groups) {
   return groups.map((group) => ({ value: group.id, label: group.name }));
 }
-

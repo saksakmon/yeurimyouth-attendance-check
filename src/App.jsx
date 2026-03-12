@@ -1,6 +1,9 @@
 import * as React from 'react';
 import * as XLSX from 'xlsx';
+import { saveAttendanceRecord } from './api/attendanceRecords.js';
 import { getAppBootstrapData, getFallbackAppBootstrapData } from './api/bootstrap.js';
+import { formatAttendedTime } from './api/mappers.js';
+import { createMember } from './api/members.js';
 import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
@@ -64,6 +67,27 @@ function getAttendanceTypeLabel(attendanceType) {
   return ATTENDANCE_TYPE_LABELS[attendanceType] || '결석';
 }
 
+function findNewcomerGroup(groups) {
+  return groups.find((group) => group.groupType === 'newcomer') || null;
+}
+
+function isNewcomerGroupId(groups, groupId) {
+  return Boolean(groupId && groups.some((group) => group.id === groupId && group.groupType === 'newcomer'));
+}
+
+function buildAppMemberFromRow(row, groups) {
+  const group = row.group_id ? groups.find((item) => item.id === row.group_id) : null;
+
+  return {
+    id: row.id,
+    name: row.name,
+    memberType: row.member_type,
+    groupId: row.group_id || null,
+    groupName: group?.name || null,
+    isActive: row.is_active !== false,
+  };
+}
+
 function getAttendanceRecord(records, memberId, weekKey) {
   return records.find((record) => record.memberId === memberId && record.weekKey === weekKey) || null;
 }
@@ -91,7 +115,7 @@ function upsertAttendanceRecord(records, nextRecord) {
   );
 
   if (existingIndex === -1) {
-    return [...records, { ...nextRecord, id: createId('attendance') }];
+    return [...records, { ...nextRecord, id: nextRecord.id || createId('attendance') }];
   }
 
   return records.map((record, index) =>
@@ -99,23 +123,57 @@ function upsertAttendanceRecord(records, nextRecord) {
       ? {
           ...record,
           ...nextRecord,
-          id: record.id,
+          id: nextRecord.id || record.id,
         }
       : record,
   );
 }
 
-function buildAttendanceUpdate(existingRecord, memberId, weekMeta, nextAttendanceType, source, baseTime = formatNow()) {
+function buildAttendanceUpdate(
+  existingRecord,
+  memberId,
+  weekMeta,
+  nextAttendanceType,
+  source,
+  baseTime = formatNow(),
+  baseTimestamp = new Date().toISOString(),
+) {
   const wasPresent = isPresentAttendanceType(existingRecord?.attendanceType);
   const willBePresent = isPresentAttendanceType(nextAttendanceType);
+  const attendedAtRaw = willBePresent
+    ? wasPresent
+      ? existingRecord?.attendedAtRaw || baseTimestamp
+      : baseTimestamp
+    : null;
+  const attendedAt = willBePresent
+    ? wasPresent
+      ? existingRecord?.attendedAt || formatAttendedTime(attendedAtRaw) || baseTime
+      : formatAttendedTime(attendedAtRaw) || baseTime
+    : null;
 
   return {
     memberId,
     weekKey: weekMeta.weekKey,
     serviceDate: weekMeta.serviceDate,
     attendanceType: nextAttendanceType,
-    attendedAt: willBePresent ? (wasPresent ? existingRecord?.attendedAt || baseTime : baseTime) : null,
+    attendedAt,
+    attendedAtRaw,
     source,
+    note: existingRecord?.note || null,
+  };
+}
+
+function buildAppAttendanceRecordFromRow(row, weekMeta) {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    weekKey: weekMeta.weekKey,
+    serviceDate: weekMeta.serviceDate,
+    attendanceType: row.attendance_type,
+    attendedAt: formatAttendedTime(row.attended_at),
+    attendedAtRaw: row.attended_at || null,
+    source: row.source,
+    note: row.note || null,
   };
 }
 
@@ -245,6 +303,7 @@ export default function App() {
     groupId: '',
     memberType: 'visitor',
   });
+  const newcomerGroup = useMemo(() => findNewcomerGroup(appBootstrap.groups), [appBootstrap.groups]);
 
   useEffect(() => {
     let active = true;
@@ -390,91 +449,182 @@ export default function App() {
     setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
   };
 
-  const applyAttendanceTypeChange = ({ memberId, weekMeta, nextAttendanceType, source, baseTime = formatNow() }) => {
-    setAttendanceRecords((prev) => {
-      const existingRecord = getAttendanceRecord(prev, memberId, weekMeta.weekKey);
-      return upsertAttendanceRecord(
-        prev,
-        buildAttendanceUpdate(existingRecord, memberId, weekMeta, nextAttendanceType, source, baseTime),
-      );
+  const applyAttendanceRecordState = (nextRecord) => {
+    setAttendanceRecords((prev) => upsertAttendanceRecord(prev, nextRecord));
+  };
+
+  const persistAttendanceTypeChange = async ({
+    existingRecord: existingRecordOverride,
+    memberId,
+    nextAttendanceType,
+    source,
+    weekMeta,
+    baseTime = formatNow(),
+  }) => {
+    if (!weekMeta?.id) {
+      throw new Error(`[attendance] missing attendance week id for ${weekMeta?.weekKey || 'unknown week'}`);
+    }
+
+    const existingRecord = existingRecordOverride || getAttendanceRecord(attendanceRecords, memberId, weekMeta.weekKey);
+    const nextRecord = buildAttendanceUpdate(existingRecord, memberId, weekMeta, nextAttendanceType, source, baseTime);
+
+    console.info('[app] persisting attendance change', {
+      attendanceWeekId: weekMeta.id,
+      memberId,
+      nextAttendanceType,
+      source,
+      weekKey: weekMeta.weekKey,
     });
+
+    const savedRow = await saveAttendanceRecord({
+      attendance_type: nextRecord.attendanceType,
+      attendance_week_id: weekMeta.id,
+      attended_at: nextRecord.attendedAtRaw,
+      member_id: memberId,
+      note: nextRecord.note,
+      source,
+    });
+    const syncedRecord = buildAppAttendanceRecordFromRow(savedRow, weekMeta);
+
+    console.info('[app] attendance change saved', {
+      memberId,
+      recordId: savedRow.id,
+      source,
+      weekKey: weekMeta.weekKey,
+    });
+
+    return syncedRecord;
   };
 
   const handleKeyTap = (key) => setQuery((prev) => prev + key);
   const handleBackspace = () => setQuery((prev) => prev.slice(0, -1));
   const handleReset = () => setQuery('');
 
-  const handleConfirmAttendance = () => {
+  const handleConfirmAttendance = async () => {
     if (!confirmTarget) return;
 
-    applyAttendanceTypeChange({
-      memberId: confirmTarget.id,
-      weekMeta: appBootstrap.currentAttendanceMeta,
-      nextAttendanceType: 'youth',
-      source: 'kiosk',
-    });
+    try {
+      const syncedRecord = await persistAttendanceTypeChange({
+        memberId: confirmTarget.id,
+        nextAttendanceType: 'youth',
+        source: 'kiosk',
+        weekMeta: appBootstrap.currentAttendanceMeta,
+      });
 
-    setConfirmTarget(null);
-    setQuery('');
-    setToast(`${confirmTarget.name} 출석이 완료됐어요`);
+      applyAttendanceRecordState(syncedRecord);
+      setConfirmTarget(null);
+      setQuery('');
+      setToast(`${confirmTarget.name} 출석이 완료됐어요`);
+    } catch (error) {
+      console.error('[app] kiosk attendance save failed', error);
+      setToast('출석 저장 중 오류가 발생했어요');
+    }
   };
 
-  const handleRegisterNewMember = () => {
+  const handleRegisterNewMember = async () => {
     const trimmedName = newMemberName.trim();
     if (!trimmedName) return;
 
-    const memberId = createId('member');
+    if (!newcomerGroup) {
+      console.error('[app] newcomer registration failed: newcomer group not found');
+      setToast('새가족숲 정보를 찾지 못했어요');
+      return;
+    }
+
     const memberType = newMemberStatus === 'visit' ? 'visitor' : 'registered';
+    let savedMemberRow = null;
 
-    setMembers((prev) => [
-      ...prev,
-      {
-        id: memberId,
-        name: trimmedName,
+    try {
+      console.info('[app] creating newcomer member', {
+        groupId: newcomerGroup.id,
         memberType,
-        groupId: 'group-newcomer',
-        groupName: '새가족숲',
-      },
-    ]);
-
-    applyAttendanceTypeChange({
-      memberId,
-      weekMeta: appBootstrap.currentAttendanceMeta,
-      nextAttendanceType: 'youth',
-      source: 'kiosk',
-    });
-
-    setNewcomerIntakes((prev) => [
-      ...prev,
-      {
-        id: createId('intake'),
         name: trimmedName,
-        intakeDate: appBootstrap.currentServiceDate,
-        intakeType: memberType === 'visitor' ? 'visit' : 'registered',
-        attendanceLinked: true,
-        memberId,
-      },
-    ]);
+      });
 
-    setShowNewMemberModal(false);
-    setNewMemberName('');
-    setNewMemberStatus('registered');
-    setQuery('');
-    setToast(`새가족 ${memberType === 'visitor' ? '방문' : '등록'} 및 출석처리가 완료됐어요`);
+      savedMemberRow = await createMember({
+        group_id: newcomerGroup.id,
+        is_active: true,
+        member_type: memberType,
+        name: trimmedName,
+      });
+      const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
+
+      setMembers((prev) => [...prev, appMember]);
+      setAppBootstrap((prev) => ({
+        ...prev,
+        totalMemberCount: prev.totalMemberCount + (savedMemberRow.is_active === false ? 0 : 1),
+      }));
+
+      const syncedAttendanceRecord = await persistAttendanceTypeChange({
+        memberId: savedMemberRow.id,
+        nextAttendanceType: 'youth',
+        source: 'kiosk',
+        weekMeta: appBootstrap.currentAttendanceMeta,
+      });
+
+      applyAttendanceRecordState(syncedAttendanceRecord);
+      setNewcomerIntakes((prev) => [
+        ...prev,
+        {
+          id: createId('intake'),
+          name: trimmedName,
+          intakeDate: appBootstrap.currentServiceDate,
+          intakeType: memberType === 'visitor' ? 'visit' : 'registered',
+          attendanceLinked: true,
+          memberId: savedMemberRow.id,
+        },
+      ]);
+      setShowNewMemberModal(false);
+      setNewMemberName('');
+      setNewMemberStatus('registered');
+      setQuery('');
+      setToast(`새가족 ${memberType === 'visitor' ? '방문' : '등록'} 및 출석처리가 완료됐어요`);
+    } catch (error) {
+      console.error('[app] newcomer registration failed', error);
+
+      if (savedMemberRow) {
+        setNewcomerIntakes((prev) => [
+          ...prev,
+          {
+            id: createId('intake'),
+            name: trimmedName,
+            intakeDate: appBootstrap.currentServiceDate,
+            intakeType: memberType === 'visitor' ? 'visit' : 'registered',
+            attendanceLinked: false,
+            memberId: savedMemberRow.id,
+          },
+        ]);
+        setShowNewMemberModal(false);
+        setNewMemberName('');
+        setNewMemberStatus('registered');
+        setQuery('');
+        setToast('새가족 등록은 저장됐지만 출석 저장은 실패했어요');
+        return;
+      }
+
+      setToast('새가족 저장 중 오류가 발생했어요');
+    }
   };
 
-  const handleAdminAttendanceTypeChange = (memberId, nextAttendanceType) => {
+  const handleAdminAttendanceTypeChange = async (memberId, nextAttendanceType) => {
     const member = members.find((item) => item.id === memberId);
 
-    applyAttendanceTypeChange({
-      memberId,
-      weekMeta: activeAdminWeekMeta,
-      nextAttendanceType,
-      source: 'admin',
-    });
+    try {
+      const syncedRecord = await persistAttendanceTypeChange({
+        memberId,
+        nextAttendanceType,
+        source: 'admin',
+        weekMeta: activeAdminWeekMeta,
+      });
 
-    if (member) {
-      setToast(`${member.name} 출결을 ${getAttendanceTypeLabel(nextAttendanceType)}로 변경했어요`);
+      applyAttendanceRecordState(syncedRecord);
+
+      if (member) {
+        setToast(`${member.name} 출결을 ${getAttendanceTypeLabel(nextAttendanceType)}로 변경했어요`);
+      }
+    } catch (error) {
+      console.error('[app] admin attendance change failed', error);
+      setToast('출결 저장 중 오류가 발생했어요');
     }
   };
 
@@ -544,24 +694,36 @@ export default function App() {
     });
   };
 
-  const handleBulkActionConfirm = () => {
+  const handleBulkActionConfirm = async () => {
     if (!adminPendingBulkActionType || adminSelectedRowIds.length === 0) return;
 
     const baseTime = formatNow();
+    let nextRecords = attendanceRecords;
 
-    setAttendanceRecords((prev) =>
-      adminSelectedRowIds.reduce((records, memberId) => {
-        const existingRecord = getAttendanceRecord(records, memberId, activeAdminWeekKey);
-        return upsertAttendanceRecord(
-          records,
-          buildAttendanceUpdate(existingRecord, memberId, activeAdminWeekMeta, adminPendingBulkActionType, 'admin', baseTime),
-        );
-      }, prev),
-    );
+    try {
+      for (const memberId of adminSelectedRowIds) {
+        const existingRecord = getAttendanceRecord(nextRecords, memberId, activeAdminWeekKey);
+        const syncedRecord = await persistAttendanceTypeChange({
+          existingRecord,
+          memberId,
+          nextAttendanceType: adminPendingBulkActionType,
+          source: 'admin',
+          weekMeta: activeAdminWeekMeta,
+          baseTime,
+        });
 
-    setToast(`선택한 ${adminSelectedRowIds.length}명의 출결을 ${getAttendanceTypeLabel(adminPendingBulkActionType)}로 변경했어요`);
-    setAdminPendingBulkActionType(null);
-    setAdminSelectedRowIds([]);
+        nextRecords = upsertAttendanceRecord(nextRecords, syncedRecord);
+      }
+
+      setAttendanceRecords(nextRecords);
+      setToast(`선택한 ${adminSelectedRowIds.length}명의 출결을 ${getAttendanceTypeLabel(adminPendingBulkActionType)}로 변경했어요`);
+      setAdminPendingBulkActionType(null);
+      setAdminSelectedRowIds([]);
+    } catch (error) {
+      console.error('[app] bulk attendance change failed', error);
+      setAttendanceRecords(nextRecords);
+      setToast('일괄 출결 저장 중 오류가 발생했어요');
+    }
   };
 
   const handleXlsxDownload = () => {
@@ -592,7 +754,7 @@ export default function App() {
 
   const handleAddMemberDraftChange = (field, value) => {
     setAddMemberDraft((prev) => {
-      if (field === 'groupId' && value !== 'group-newcomer') {
+      if (field === 'groupId' && !isNewcomerGroupId(appBootstrap.groups, value)) {
         return { ...prev, groupId: value, memberType: 'registered' };
       }
 
@@ -600,41 +762,62 @@ export default function App() {
     });
   };
 
-  const handleAddMemberSave = () => {
+  const handleAddMemberSave = async () => {
     if (!addMemberDraft.name.trim() || !addMemberDraft.groupId) return;
 
     const selectedGroup = appBootstrap.groups.find((group) => group.id === addMemberDraft.groupId);
-    const memberId = createId('member');
-    const memberType = addMemberDraft.groupId === 'group-newcomer' ? addMemberDraft.memberType : 'registered';
+    const trimmedName = addMemberDraft.name.trim();
+    const isNewcomerGroup = isNewcomerGroupId(appBootstrap.groups, addMemberDraft.groupId);
+    const memberType = isNewcomerGroup ? addMemberDraft.memberType : 'registered';
 
-    setMembers((prev) => [
-      ...prev,
-      {
-        id: memberId,
-        name: addMemberDraft.name.trim(),
-        memberType,
-        groupId: selectedGroup?.id || null,
-        groupName: selectedGroup?.name || null,
-      },
-    ]);
-
-    if (addMemberDraft.groupId === 'group-newcomer') {
-      setNewcomerIntakes((prev) => [
-        ...prev,
-        {
-          id: createId('intake'),
-          name: addMemberDraft.name.trim(),
-          intakeDate: appBootstrap.currentServiceDate,
-          intakeType: memberType === 'visitor' ? 'visit' : 'registered',
-          attendanceLinked: false,
-          memberId,
-        },
-      ]);
+    if (!selectedGroup) {
+      console.error('[app] add member failed: selected group not found', addMemberDraft.groupId);
+      setToast('소속 숲 정보를 찾지 못했어요');
+      return;
     }
 
-    setShowAddMemberModal(false);
-    setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
-    setToast(`${addMemberDraft.name.trim()} 청년을 추가했어요`);
+    try {
+      console.info('[app] creating member from admin', {
+        groupId: selectedGroup.id,
+        memberType,
+        name: trimmedName,
+      });
+
+      const savedMemberRow = await createMember({
+        group_id: selectedGroup.id,
+        is_active: true,
+        member_type: memberType,
+        name: trimmedName,
+      });
+      const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
+
+      setMembers((prev) => [...prev, appMember]);
+      setAppBootstrap((prev) => ({
+        ...prev,
+        totalMemberCount: prev.totalMemberCount + (savedMemberRow.is_active === false ? 0 : 1),
+      }));
+
+      if (isNewcomerGroup) {
+        setNewcomerIntakes((prev) => [
+          ...prev,
+          {
+            id: createId('intake'),
+            name: trimmedName,
+            intakeDate: appBootstrap.currentServiceDate,
+            intakeType: memberType === 'visitor' ? 'visit' : 'registered',
+            attendanceLinked: false,
+            memberId: savedMemberRow.id,
+          },
+        ]);
+      }
+
+      setShowAddMemberModal(false);
+      setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
+      setToast(`${trimmedName} 청년을 추가했어요`);
+    } catch (error) {
+      console.error('[app] add member save failed', error);
+      setToast('청년 추가 저장 중 오류가 발생했어요');
+    }
   };
 
   const renderName = (member) => {
@@ -683,6 +866,7 @@ export default function App() {
           canSave: Boolean(addMemberDraft.name.trim() && addMemberDraft.groupId),
           draft: addMemberDraft,
           groupOptions: addMemberGroupOptions,
+          isNewcomerGroupSelected: isNewcomerGroupId(appBootstrap.groups, addMemberDraft.groupId),
           isOpen: showAddMemberModal,
           onClose: closeAddMemberModal,
           onDraftChange: handleAddMemberDraftChange,
