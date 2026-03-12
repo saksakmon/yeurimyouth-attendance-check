@@ -22,6 +22,10 @@ import {
   sortAttendanceWeeks,
 } from './mappers.js';
 
+function hasCoreBootstrapRows({ attendanceWeekRows, groupRows, memberRows }) {
+  return groupRows.length > 0 && memberRows.length > 0 && attendanceWeekRows.length > 0;
+}
+
 function buildBootstrapPayload({ attendanceRecordRows, attendanceWeekRows, currentAttendanceWeekRow, groupRows, memberRows, source }) {
   const groups = groupRows.map(mapGroupRow);
   const groupsById = Object.fromEntries(groups.map((group) => [group.id, group]));
@@ -65,8 +69,13 @@ export async function getAppBootstrapData() {
       getCurrentAttendanceWeek(),
     ]);
 
-    if (groupRows.length === 0 || memberRows.length === 0 || attendanceWeekRows.length === 0) {
-      logBootstrapSource('falling back to mock source', 'core tables are empty');
+    if (!hasCoreBootstrapRows({ attendanceWeekRows, groupRows, memberRows })) {
+      logBootstrapSource('falling back to mock source', {
+        reason: 'core tables are empty',
+        weeks: attendanceWeekRows.length,
+        groups: groupRows.length,
+        members: memberRows.length,
+      });
       return getFallbackAppBootstrapData();
     }
 
@@ -75,7 +84,13 @@ export async function getAppBootstrapData() {
       await Promise.all(attendanceWeekRows.map((week) => getAttendanceRecordsByWeek(week.id)))
     ).flat();
 
-    logBootstrapSource('using supabase source');
+    logBootstrapSource('using supabase source', {
+      attendanceRecords: attendanceRecordRows.length,
+      currentWeekId: resolvedCurrentWeek?.id || null,
+      weeks: attendanceWeekRows.length,
+      groups: groupRows.length,
+      members: memberRows.length,
+    });
     return buildBootstrapPayload({
       attendanceRecordRows,
       attendanceWeekRows,

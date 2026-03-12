@@ -5,6 +5,17 @@ function createMockId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function buildAttendanceRecordPayload(payload) {
+  return {
+    ...payload,
+    note: payload.note ?? null,
+  };
+}
+
+function logAttendanceWrite(message, payload) {
+  console.info(`[attendance_records] ${message}`, payload);
+}
+
 export async function getAttendanceRecordsByWeek(attendanceWeekId) {
   if (!attendanceWeekId) return [];
 
@@ -26,23 +37,27 @@ export async function getAttendanceRecordsByWeek(attendanceWeekId) {
 }
 
 export async function saveAttendanceRecord(payload) {
+  const nextPayload = buildAttendanceRecordPayload(payload);
+
   if (!hasSupabaseEnv || !supabase) {
-    console.info('[attendance_records] using local mock save', payload);
-    return {
+    const mockRow = {
       id: createMockId('attendance'),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      ...payload,
+      ...nextPayload,
     };
+
+    logAttendanceWrite('using local mock save', mockRow);
+    return mockRow;
   }
 
-  console.info('[attendance_records] save via supabase', payload);
+  logAttendanceWrite('saveAttendanceRecord via supabase', nextPayload);
 
   const { data: existingRows, error: existingError } = await supabase
     .from('attendance_records')
     .select('id, member_id, attendance_week_id, attendance_type, attended_at, source, note, created_at, updated_at')
-    .eq('member_id', payload.member_id)
-    .eq('attendance_week_id', payload.attendance_week_id)
+    .eq('member_id', nextPayload.member_id)
+    .eq('attendance_week_id', nextPayload.attendance_week_id)
     .order('created_at', { ascending: false })
     .limit(1);
 
@@ -57,10 +72,10 @@ export async function saveAttendanceRecord(payload) {
     const { data, error } = await supabase
       .from('attendance_records')
       .update({
-        attendance_type: payload.attendance_type,
-        attended_at: payload.attended_at,
-        source: payload.source,
-        note: payload.note ?? null,
+        attendance_type: nextPayload.attendance_type,
+        attended_at: nextPayload.attended_at,
+        source: nextPayload.source,
+        note: nextPayload.note,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
@@ -72,13 +87,18 @@ export async function saveAttendanceRecord(payload) {
       throw new Error(`[attendance_records] update failed: ${error.message}`);
     }
 
-    console.info('[attendance_records] update success', data);
+    logAttendanceWrite('saveAttendanceRecord update success', {
+      attendanceType: data.attendance_type,
+      id: data.id,
+      memberId: data.member_id,
+      weekId: data.attendance_week_id,
+    });
     return data;
   }
 
   const { data, error } = await supabase
     .from('attendance_records')
-    .insert(payload)
+    .insert(nextPayload)
     .select('id, member_id, attendance_week_id, attendance_type, attended_at, source, note, created_at, updated_at')
     .single();
 
@@ -87,6 +107,11 @@ export async function saveAttendanceRecord(payload) {
     throw new Error(`[attendance_records] insert failed: ${error.message}`);
   }
 
-  console.info('[attendance_records] insert success', data);
+  logAttendanceWrite('saveAttendanceRecord insert success', {
+    attendanceType: data.attendance_type,
+    id: data.id,
+    memberId: data.member_id,
+    weekId: data.attendance_week_id,
+  });
   return data;
 }

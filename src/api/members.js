@@ -5,6 +5,10 @@ function createMockId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function logMemberWrite(message, payload) {
+  console.info(`[members] ${message}`, payload);
+}
+
 export async function getMembers() {
   if (!hasSupabaseEnv || !supabase) {
     return MOCK_MEMBERS;
@@ -24,16 +28,18 @@ export async function getMembers() {
 
 export async function createMember(payload) {
   if (!hasSupabaseEnv || !supabase) {
-    console.info('[members] using local mock insert');
-    return {
+    const mockRow = {
       id: createMockId('member'),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       ...payload,
     };
+
+    logMemberWrite('using local mock insert', mockRow);
+    return mockRow;
   }
 
-  console.info('[members] insert via supabase', payload);
+  logMemberWrite('createMember insert via supabase', payload);
   const { data, error } = await supabase
     .from('members')
     .insert(payload)
@@ -45,6 +51,10 @@ export async function createMember(payload) {
     throw new Error(`[members] insert failed: ${error.message}`);
   }
 
-  console.info('[members] insert success', data);
+  logMemberWrite('createMember insert success', {
+    groupId: data.group_id,
+    id: data.id,
+    memberType: data.member_type,
+  });
   return data;
 }
