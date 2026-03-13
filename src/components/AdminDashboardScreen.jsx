@@ -8,8 +8,8 @@ const ATTENDANCE_OPTIONS = [
   { value: 'adult', label: '장년부(1~3부)' },
 ];
 const MEMBER_TYPE_OPTIONS = [
-  { value: 'visitor', label: '방문 회원' },
-  { value: 'registered', label: '등록 회원(새가족교육)' },
+  { value: 'visitor', label: '새가족(방문)' },
+  { value: 'registered', label: '새가족(등록)' },
 ];
 
 function usePresence(isOpen, duration = 180) {
@@ -90,7 +90,7 @@ function MultiSelectField({
 }) {
   return (
     <div ref={wrapperRef} className={`relative ${className || ''}`}>
-      <div className="admin-field-label">{label}</div>
+      {label ? <div className="admin-field-label">{label}</div> : null}
       <button
         type="button"
         onClick={onToggleOpen}
@@ -253,6 +253,7 @@ const MEMBER_DIRECTORY_FILTER_OPTIONS = [
   { value: 'active', label: '활성' },
   { value: 'inactive', label: '비활성' },
 ];
+const MEMBER_DIRECTORY_GROUP_ALL_VALUE = 'ALL';
 const MEMBER_DIRECTORY_TYPE_OPTIONS = [
   { value: 'all', label: '전체' },
   { value: 'regular', label: '등반' },
@@ -265,10 +266,28 @@ function MemberStatusPill({ active }) {
 }
 
 function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, openField, setOpenField }) {
-  const selectedGroupLabel =
-    memberDirectory.filters.groupOptions.find((option) => option.value === memberDirectory.filters.draft.groupId)?.label || '';
+  const selectedStatusLabel =
+    MEMBER_DIRECTORY_FILTER_OPTIONS.find((option) => option.value === memberDirectory.filters.draft.status)?.label || '전체';
   const selectedTypeLabel =
     MEMBER_DIRECTORY_TYPE_OPTIONS.find((option) => option.value === memberDirectory.filters.draft.type)?.label || '전체';
+  const selectedGroupIds = memberDirectory.filters.draft.groupIds || [];
+  const selectedGroupValues = selectedGroupIds.length > 0 ? selectedGroupIds : [MEMBER_DIRECTORY_GROUP_ALL_VALUE];
+  const selectedGroupChips =
+    selectedGroupIds.length === 0
+      ? []
+      : selectedGroupIds.length === memberDirectory.filters.groupOptions.length
+        ? [<FilterChip key="member-directory-group-all">전체 선택</FilterChip>]
+        : selectedGroupIds.length === 1
+          ? [
+              <FilterChip key={selectedGroupIds[0]}>
+                {memberDirectory.filters.groupOptions.find((option) => option.value === selectedGroupIds[0])?.label || selectedGroupIds[0]}
+              </FilterChip>,
+            ]
+          : [<FilterChip key="member-directory-group-count">{selectedGroupIds.length}개 선택됨</FilterChip>];
+  const memberDirectoryGroupFilterOptions = [
+    { value: MEMBER_DIRECTORY_GROUP_ALL_VALUE, label: '전체' },
+    ...memberDirectory.filters.groupOptions,
+  ];
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-5 py-5 lg:px-8 lg:py-6">
@@ -279,105 +298,6 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
         <p className="admin-info-banner-text">
           비활성화한 청년은 출결관리 표와 키오스크 검색 결과에서 제외되고, 인원관리에서 다시 활성화할 수 있어요.
         </p>
-      </section>
-
-      <section className="admin-surface mt-4 p-4 lg:p-5">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr_1.4fr_auto] xl:items-end">
-          <div>
-            <div className="admin-field-label">상태</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {MEMBER_DIRECTORY_FILTER_OPTIONS.map((option) => {
-                const active = memberDirectory.filters.draft.status === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => memberDirectory.filters.onDraftChange('status', option.value)}
-                    className={`admin-tab ${active ? 'admin-tab-active' : ''}`}
-                    style={active ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <label className="admin-field-label">등록일</label>
-            <div className="admin-date-range mt-2">
-              <input
-                type="date"
-                value={memberDirectory.filters.draft.registeredFrom}
-                onChange={(event) => memberDirectory.filters.onDraftChange('registeredFrom', event.target.value)}
-                className="admin-control admin-input w-full"
-              />
-              <span className="admin-date-range-separator">~</span>
-              <input
-                type="date"
-                value={memberDirectory.filters.draft.registeredTo}
-                onChange={(event) => memberDirectory.filters.onDraftChange('registeredTo', event.target.value)}
-                className="admin-control admin-input w-full"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="admin-field-label">소속 숲</label>
-            <SingleSelectField
-              className="mt-2"
-              onOptionSelect={(value) => {
-                memberDirectory.filters.onDraftChange('groupId', value);
-                setOpenField(null);
-              }}
-              onToggleOpen={() =>
-                setOpenField(openField === 'member-directory-group' ? null : 'member-directory-group')
-              }
-              open={openField === 'member-directory-group'}
-              options={memberDirectory.filters.groupOptions}
-              placeholder="선택해 주세요"
-              selectedLabel={selectedGroupLabel}
-              selectedValue={memberDirectory.filters.draft.groupId}
-              wrapperRef={bindFieldRef('member-directory-group')}
-            />
-          </div>
-
-          <div>
-            <label className="admin-field-label">유형</label>
-            <SingleSelectField
-              className="mt-2"
-              onOptionSelect={(value) => {
-                memberDirectory.filters.onDraftChange('type', value);
-                setOpenField(null);
-              }}
-              onToggleOpen={() => setOpenField(openField === 'member-directory-type' ? null : 'member-directory-type')}
-              open={openField === 'member-directory-type'}
-              options={MEMBER_DIRECTORY_TYPE_OPTIONS}
-              selectedLabel={selectedTypeLabel}
-              selectedValue={memberDirectory.filters.draft.type}
-              wrapperRef={bindFieldRef('member-directory-type')}
-            />
-          </div>
-
-          <div className="flex min-w-[178px] flex-wrap items-end gap-2">
-            <button
-              type="button"
-              className="admin-button admin-button-primary min-w-[84px] disabled:cursor-not-allowed"
-              style={memberDirectory.filters.isDirty ? { backgroundColor: accentColor } : undefined}
-              disabled={!memberDirectory.filters.isDirty}
-              onClick={memberDirectory.filters.onApply}
-            >
-              검색
-            </button>
-            <button
-              type="button"
-              className="admin-button admin-button-secondary min-w-[84px]"
-              onClick={memberDirectory.filters.onReset}
-            >
-              초기화
-            </button>
-          </div>
-        </div>
       </section>
 
       <section className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -399,6 +319,107 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
           <div className="admin-overline">비활성 회원</div>
           <div className="mt-4 text-[32px] font-semibold leading-none">{memberDirectory.summary.inactiveCount}명</div>
           <div className="mt-1.5 text-sm text-black/45">이력은 유지되고 운영 화면에서는 제외돼요</div>
+        </div>
+      </section>
+
+      <section className="admin-surface mt-4 p-4 lg:p-5">
+        <div className="admin-overline">필터</div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <label className="admin-field-label">상태</label>
+            <SingleSelectField
+              className="mt-2"
+              onOptionSelect={(value) => {
+                memberDirectory.filters.onDraftChange('status', value);
+                setOpenField(null);
+              }}
+              onToggleOpen={() => setOpenField(openField === 'member-directory-status' ? null : 'member-directory-status')}
+              open={openField === 'member-directory-status'}
+              options={MEMBER_DIRECTORY_FILTER_OPTIONS}
+              selectedLabel={selectedStatusLabel}
+              selectedValue={memberDirectory.filters.draft.status}
+              wrapperRef={bindFieldRef('member-directory-status')}
+            />
+          </div>
+
+          <div>
+            <label className="admin-field-label">등록일</label>
+            <div className="admin-date-range mt-2">
+              <div>
+                <div className="admin-date-field-meta">시작일</div>
+                <div className="admin-date-input-wrap">
+                  <input
+                    type="date"
+                    value={memberDirectory.filters.draft.registeredFrom}
+                    onChange={(event) => memberDirectory.filters.onDraftChange('registeredFrom', event.target.value)}
+                    className="admin-control admin-input admin-date-input w-full"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="admin-date-field-meta">종료일</div>
+                <div className="admin-date-input-wrap">
+                  <input
+                    type="date"
+                    value={memberDirectory.filters.draft.registeredTo}
+                    onChange={(event) => memberDirectory.filters.onDraftChange('registeredTo', event.target.value)}
+                    className="admin-control admin-input admin-date-input w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="admin-field-label">소속 숲</label>
+            <MultiSelectField
+              className="mt-2"
+              chips={selectedGroupChips}
+              label=""
+              onOptionToggle={memberDirectory.filters.onDraftGroupToggle}
+              onToggleOpen={() => setOpenField(openField === 'member-directory-group' ? null : 'member-directory-group')}
+              open={openField === 'member-directory-group'}
+              options={memberDirectoryGroupFilterOptions}
+              placeholder="선택해 주세요"
+              selectedValues={selectedGroupValues}
+              wrapperRef={bindFieldRef('member-directory-group')}
+            />
+          </div>
+
+          <div>
+            <label className="admin-field-label">유형</label>
+            <SingleSelectField
+              className="mt-2"
+              onOptionSelect={(value) => {
+                memberDirectory.filters.onDraftChange('type', value);
+                setOpenField(null);
+              }}
+              onToggleOpen={() => setOpenField(openField === 'member-directory-type' ? null : 'member-directory-type')}
+              open={openField === 'member-directory-type'}
+              options={MEMBER_DIRECTORY_TYPE_OPTIONS}
+              selectedLabel={selectedTypeLabel}
+              selectedValue={memberDirectory.filters.draft.type}
+              wrapperRef={bindFieldRef('member-directory-type')}
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="admin-button admin-button-primary min-w-[84px] disabled:cursor-not-allowed"
+            style={memberDirectory.filters.isDirty ? { backgroundColor: accentColor } : undefined}
+            disabled={!memberDirectory.filters.isDirty}
+            onClick={memberDirectory.filters.onApply}
+          >
+            검색
+          </button>
+          <button
+            type="button"
+            className="admin-button admin-button-secondary min-w-[84px]"
+            onClick={memberDirectory.filters.onReset}
+          >
+            초기화
+          </button>
         </div>
       </section>
 
@@ -477,7 +498,7 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
     <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
       <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
         <div className="text-[24px] font-semibold tracking-tight text-black">회원 정보 수정</div>
-        <div className="mt-2 text-sm text-black/45">이름, 회원 유형, 소속 숲을 수정할 수 있어요.</div>
+        <div className="mt-2 text-sm text-black/45">이름, 유형, 소속 숲을 수정할 수 있어요.</div>
 
         {editMember.memberLabel ? (
           <div className="mt-4 rounded-[12px] bg-black/[0.03] px-4 py-3 text-sm text-black/55">
@@ -516,7 +537,7 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
 
           {editMember.isNewcomerGroupSelected && (
             <div>
-              <label className="admin-field-label">회원 유형</label>
+              <label className="admin-field-label">유형</label>
               <SingleSelectField
                 className="mt-2"
                 onOptionSelect={(value) => {
@@ -886,7 +907,7 @@ export default function AdminDashboardScreen({
                           />
                         </th>
                         <th className="px-4 py-3 font-semibold text-black/45">이름</th>
-                        <th className="px-4 py-3 font-semibold text-black/45">회원 유형</th>
+                        <th className="px-4 py-3 font-semibold text-black/45">유형</th>
                         <th className="px-4 py-3 font-semibold text-black/45">소속 숲</th>
                         <th className="px-4 py-3 font-semibold text-black/45">출결유무</th>
                         <th className="px-4 py-3 font-semibold text-black/45">출석시각</th>
@@ -978,7 +999,7 @@ export default function AdminDashboardScreen({
                 <thead className="bg-black/[0.024] text-left">
                   <tr>
                     <th className="px-4 py-3 font-semibold text-black/45">이름</th>
-                    <th className="px-4 py-3 font-semibold text-black/45">회원 유형</th>
+                    <th className="px-4 py-3 font-semibold text-black/45">유형</th>
                     <th className="px-4 py-3 font-semibold text-black/45">소속 숲</th>
                     <th className="px-4 py-3 font-semibold text-black/45">결석 정보</th>
                   </tr>
@@ -1054,7 +1075,7 @@ export default function AdminDashboardScreen({
 
               {addMember.isNewcomerGroupSelected && (
                 <div>
-                  <label className="admin-field-label">회원 유형</label>
+                  <label className="admin-field-label">유형</label>
                   <SingleSelectField
                     className="mt-2"
                     onOptionSelect={(value) => {

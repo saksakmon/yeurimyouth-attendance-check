@@ -27,6 +27,7 @@ const MEMBER_DIRECTORY_FILTERS = {
   all: 'all',
   inactive: 'inactive',
 };
+const MEMBER_DIRECTORY_ALL_GROUPS_VALUE = 'ALL';
 const MEMBER_DIRECTORY_TYPE_FILTERS = {
   all: 'all',
   regular: 'regular',
@@ -36,10 +37,6 @@ const MEMBER_DIRECTORY_TYPE_FILTERS = {
 const RECENT_ABSENCE_WINDOW_SIZE = 3;
 const CHOSUNG_QUERY_PATTERN = /^[ㄱ-ㅎ]+$/;
 const CHOSUNG_LIST = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
-const MEMBER_TYPE_LABELS = {
-  registered: '등록 회원',
-  visitor: '방문 회원',
-};
 const ATTENDANCE_TYPE_LABELS = {
   absent: '결석',
   youth: '청년부(4부)',
@@ -74,10 +71,6 @@ function formatNow(date = new Date()) {
 
 function isPresentAttendanceType(attendanceType) {
   return attendanceType === 'youth' || attendanceType === 'adult';
-}
-
-function getMemberTypeLabel(memberType) {
-  return MEMBER_TYPE_LABELS[memberType] || '등록 회원';
 }
 
 function getAttendanceTypeLabel(attendanceType) {
@@ -136,6 +129,10 @@ function getMemberDirectoryTypeLabel(member, groups) {
   if (typeValue === MEMBER_DIRECTORY_TYPE_FILTERS.newcomerVisitor) return '새가족(방문)';
   if (typeValue === MEMBER_DIRECTORY_TYPE_FILTERS.newcomerRegistered) return '새가족(등록)';
   return '등반';
+}
+
+function getMemberLifecycleLabel(member, groups) {
+  return getMemberDirectoryTypeLabel(member, groups);
 }
 
 function isMemberWithinCreatedDateRange(member, registeredFrom, registeredTo) {
@@ -327,7 +324,7 @@ function getRecentAbsenceStreakCount(members, records, weekOptions, selectedWeek
   ).length;
 }
 
-function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekKey) {
+function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekKey, groups) {
   const { startIndex, recentWeeks } = getRecentAttendanceWindow(weekOptions, selectedWeekKey);
   const recentWeekKeys = recentWeeks.map((option) => option.weekKey);
 
@@ -354,7 +351,7 @@ function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekK
       return {
         id: member.id,
         name: member.displayName || member.name,
-        memberTypeLabel: getMemberTypeLabel(member.memberType),
+        memberTypeLabel: getMemberLifecycleLabel(member, groups),
         groupName: member.groupName || '-',
         absenceInfo: lastPresentWeek
           ? `마지막 출석 ${lastPresentWeek.adminLabel}`
@@ -373,7 +370,7 @@ function areFiltersEqual(a, b) {
 
 function areMemberDirectoryFiltersEqual(a, b) {
   return (
-    a.groupId === b.groupId &&
+    JSON.stringify(a.groupIds) === JSON.stringify(b.groupIds) &&
     a.registeredFrom === b.registeredFrom &&
     a.registeredTo === b.registeredTo &&
     a.status === b.status &&
@@ -382,13 +379,16 @@ function areMemberDirectoryFiltersEqual(a, b) {
 }
 
 const FALLBACK_BOOTSTRAP = getFallbackAppBootstrapData();
-const DEFAULT_MEMBER_DIRECTORY_FILTERS = {
-  groupId: '',
-  registeredFrom: '',
-  registeredTo: '',
-  status: MEMBER_DIRECTORY_FILTERS.all,
-  type: MEMBER_DIRECTORY_TYPE_FILTERS.all,
-};
+
+function getDefaultMemberDirectoryFilters() {
+  return {
+    groupIds: [],
+    registeredFrom: '',
+    registeredTo: '',
+    status: MEMBER_DIRECTORY_FILTERS.all,
+    type: MEMBER_DIRECTORY_TYPE_FILTERS.all,
+  };
+}
 
 export default function App() {
   const [appBootstrap, setAppBootstrap] = useState(() => FALLBACK_BOOTSTRAP);
@@ -418,8 +418,8 @@ export default function App() {
   const [adminActiveWeekKey, setAdminActiveWeekKey] = useState(FALLBACK_BOOTSTRAP.currentWeekKey);
   const [adminSelectedRowIds, setAdminSelectedRowIds] = useState([]);
   const [adminPendingBulkActionType, setAdminPendingBulkActionType] = useState(null);
-  const [draftMemberDirectoryFilters, setDraftMemberDirectoryFilters] = useState(DEFAULT_MEMBER_DIRECTORY_FILTERS);
-  const [appliedMemberDirectoryFilters, setAppliedMemberDirectoryFilters] = useState(DEFAULT_MEMBER_DIRECTORY_FILTERS);
+  const [draftMemberDirectoryFilters, setDraftMemberDirectoryFilters] = useState(() => getDefaultMemberDirectoryFilters());
+  const [appliedMemberDirectoryFilters, setAppliedMemberDirectoryFilters] = useState(() => getDefaultMemberDirectoryFilters());
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editMemberDraft, setEditMemberDraft] = useState({
     name: '',
@@ -557,14 +557,14 @@ export default function App() {
         return {
           id: member.id,
           name: member.displayName || member.name,
-          memberTypeLabel: getMemberTypeLabel(member.memberType),
+          memberTypeLabel: getMemberLifecycleLabel(member, appBootstrap.groups),
           groupName: member.groupName || '-',
           attendanceType,
           attendanceTypeLabel: getAttendanceTypeLabel(attendanceType),
           attendedAt: isPresentAttendanceType(attendanceType) ? record?.attendedAt || null : null,
         };
       }),
-    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey],
+    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey, appBootstrap.groups],
   );
 
   useEffect(() => {
@@ -576,8 +576,15 @@ export default function App() {
   const adminTotalCount = adminRows.length;
   const adminAttendanceRate = adminTotalCount > 0 ? Math.round((adminAttendanceCount / adminTotalCount) * 100) : 0;
   const threeWeekAbsenceRows = useMemo(
-    () => getRecentAbsenceStreakRows(filteredAdminMembers, attendanceRecords, appBootstrap.attendanceWeeks, activeAdminWeekKey),
-    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey, appBootstrap.attendanceWeeks],
+    () =>
+      getRecentAbsenceStreakRows(
+        filteredAdminMembers,
+        attendanceRecords,
+        appBootstrap.attendanceWeeks,
+        activeAdminWeekKey,
+        appBootstrap.groups,
+      ),
+    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey, appBootstrap.attendanceWeeks, appBootstrap.groups],
   );
   const threeWeekAbsenceCount = getRecentAbsenceStreakCount(
     filteredAdminMembers,
@@ -607,7 +614,9 @@ export default function App() {
               : appliedMemberDirectoryFilters.status === MEMBER_DIRECTORY_FILTERS.inactive
                 ? !member.isActive
                 : member.isActive;
-          const matchesGroup = !appliedMemberDirectoryFilters.groupId || member.groupId === appliedMemberDirectoryFilters.groupId;
+          const matchesGroup =
+            appliedMemberDirectoryFilters.groupIds.length === 0 ||
+            appliedMemberDirectoryFilters.groupIds.includes(member.groupId || '');
           const matchesType =
             appliedMemberDirectoryFilters.type === MEMBER_DIRECTORY_TYPE_FILTERS.all
               ? true
@@ -634,6 +643,19 @@ export default function App() {
         })),
     [appliedMemberDirectoryFilters, appBootstrap.groups, resolvedMembers],
   );
+
+  useEffect(() => {
+    const validGroupIds = new Set(memberDirectoryGroupOptions.map((option) => option.value));
+
+    setDraftMemberDirectoryFilters((prev) => ({
+      ...prev,
+      groupIds: prev.groupIds.filter((groupId) => validGroupIds.has(groupId)),
+    }));
+    setAppliedMemberDirectoryFilters((prev) => ({
+      ...prev,
+      groupIds: prev.groupIds.filter((groupId) => validGroupIds.has(groupId)),
+    }));
+  }, [memberDirectoryGroupOptions]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -952,7 +974,7 @@ export default function App() {
   const handleXlsxDownload = () => {
     const rows = adminRows.map((row) => ({
       이름: row.name,
-      '회원 유형': row.memberTypeLabel,
+      유형: row.memberTypeLabel,
       '소속 숲': row.groupName || '-',
       출결유무: row.attendanceTypeLabel,
       출석시각: row.attendedAt || '-',
@@ -1177,13 +1199,26 @@ export default function App() {
     setDraftMemberDirectoryFilters((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleMemberDirectoryDraftGroupToggle = (value) => {
+    setDraftMemberDirectoryFilters((prev) => {
+      if (value === MEMBER_DIRECTORY_ALL_GROUPS_VALUE) {
+        return { ...prev, groupIds: [] };
+      }
+
+      const exists = prev.groupIds.includes(value);
+      const nextGroupIds = exists ? prev.groupIds.filter((groupId) => groupId !== value) : [...prev.groupIds, value];
+      return { ...prev, groupIds: nextGroupIds };
+    });
+  };
+
   const handleApplyMemberDirectoryFilters = () => {
     setAppliedMemberDirectoryFilters(draftMemberDirectoryFilters);
   };
 
   const handleResetMemberDirectoryFilters = () => {
-    setDraftMemberDirectoryFilters(DEFAULT_MEMBER_DIRECTORY_FILTERS);
-    setAppliedMemberDirectoryFilters(DEFAULT_MEMBER_DIRECTORY_FILTERS);
+    const nextFilters = getDefaultMemberDirectoryFilters();
+    setDraftMemberDirectoryFilters(nextFilters);
+    setAppliedMemberDirectoryFilters(nextFilters);
   };
 
   const handleAdminSectionChange = (nextSection) => {
@@ -1262,6 +1297,7 @@ export default function App() {
             isDirty: isMemberDirectoryFilterDirty,
             onApply: handleApplyMemberDirectoryFilters,
             onDraftChange: handleMemberDirectoryDraftChange,
+            onDraftGroupToggle: handleMemberDirectoryDraftGroupToggle,
             onReset: handleResetMemberDirectoryFilters,
           },
           onToggleActive: handleToggleMemberActive,

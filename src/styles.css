@@ -251,15 +251,62 @@ select:hover {
 
 .admin-date-range {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
 }
 
 .admin-date-range-separator {
   color: rgba(17, 24, 39, 0.36);
   font-size: 13px;
   font-weight: 600;
+}
+
+.admin-date-field-meta {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(17, 24, 39, 0.36);
+}
+
+.admin-date-input-wrap {
+  position: relative;
+}
+
+.admin-date-input-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cg fill='none' stroke='%23111827' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.2' opacity='.52'%3E%3Crect x='2.2' y='3.4' width='11.6' height='10.2' rx='2'/%3E%3Cpath d='M5 2.4v2.1M11 2.4v2.1M2.4 6.1h11.2'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
+}
+
+.admin-date-input {
+  padding-right: 38px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.admin-date-input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.admin-date-input::-webkit-datetime-edit {
+  color: rgba(17, 24, 39, 0.82);
+}
+
+.admin-date-input::-webkit-date-and-time-value {
+  text-align: left;
 }
 
 .admin-caret {
