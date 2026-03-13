@@ -3,10 +3,12 @@ import * as XLSX from 'xlsx';
 import { saveAttendanceRecord } from './api/attendanceRecords.js';
 import { getAppBootstrapData, getFallbackAppBootstrapData } from './api/bootstrap.js';
 import { formatAttendedTime } from './api/mappers.js';
-import { createMember } from './api/members.js';
+import { createMember, getMembers } from './api/members.js';
 import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
+import { hasSupabaseEnv } from './lib/supabase.js';
+import { getNextMemberDisplayNamePreview, resolveMemberDisplayNames } from './utils/memberDisplay.js';
 
 const { useEffect, useMemo, useState } = React;
 
@@ -79,12 +81,14 @@ function buildAppMemberFromRow(row, groups) {
   const group = row.group_id ? groups.find((item) => item.id === row.group_id) : null;
 
   return {
+    createdAt: row.created_at || null,
     id: row.id,
     name: row.name,
     memberType: row.member_type,
     groupId: row.group_id || null,
     groupName: group?.name || null,
     isActive: row.is_active !== false,
+    updatedAt: row.updated_at || null,
   };
 }
 
@@ -182,7 +186,7 @@ function filterMembers(members, query) {
   if (!trimmed) return [];
 
   return members.filter((member) => {
-    const haystack = `${member.name}${member.groupName || ''}${getChosung(member.name)}`;
+    const haystack = `${member.name}${member.displayName || ''}${member.groupName || ''}${getChosung(member.name)}`;
     return haystack.includes(trimmed);
   });
 }
@@ -250,7 +254,7 @@ function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekK
 
       return {
         id: member.id,
-        name: member.name,
+        name: member.displayName || member.name,
         memberTypeLabel: getMemberTypeLabel(member.memberType),
         groupName: member.groupName || '-',
         absenceInfo: lastPresentWeek
@@ -339,7 +343,12 @@ export default function App() {
     };
   }, []);
 
-  const filtered = useMemo(() => filterMembers(members, query), [members, query]);
+  const resolvedMembers = useMemo(() => resolveMemberDisplayNames(members), [members]);
+  const membersById = useMemo(
+    () => Object.fromEntries(resolvedMembers.map((member) => [member.id, member])),
+    [resolvedMembers],
+  );
+  const filtered = useMemo(() => filterMembers(resolvedMembers, query), [resolvedMembers, query]);
   const currentAttendance = useMemo(
     () => buildAttendanceMap(attendanceRecords, appBootstrap.currentWeekKey),
     [attendanceRecords, appBootstrap.currentWeekKey],
@@ -349,6 +358,15 @@ export default function App() {
   const resultState = getResultState(query, filtered);
   const canRegisterNewMember = Boolean(newMemberName.trim());
   const isFilterDirty = !areFiltersEqual(draftFilters, appliedFilters);
+  const addMemberNamePreview = useMemo(
+    () => getNextMemberDisplayNamePreview(resolvedMembers, addMemberDraft.name),
+    [resolvedMembers, addMemberDraft.name],
+  );
+  const addMemberNameGuide = useMemo(() => {
+    if (!addMemberNamePreview) return null;
+
+    return '동명이인이 있어요. 원활한 관리를 위해 생성시 이름 뒤 알파벳이 붙어요.';
+  }, [addMemberNamePreview]);
 
   const appliedResolvedWeekKeys = useMemo(
     () =>
@@ -376,10 +394,10 @@ export default function App() {
 
   const draftNameOptions = useMemo(
     () =>
-      members
+      resolvedMembers
         .filter((member) => draftFilters.groupId === 'all' || member.groupId === draftFilters.groupId)
-        .map((member) => ({ value: member.id, label: member.name })),
-    [members, draftFilters.groupId],
+        .map((member) => ({ value: member.id, label: member.displayName || member.name })),
+    [resolvedMembers, draftFilters.groupId],
   );
 
   useEffect(() => {
@@ -391,12 +409,12 @@ export default function App() {
 
   const filteredAdminMembers = useMemo(
     () =>
-      members.filter((member) => {
+      resolvedMembers.filter((member) => {
         const matchGroup = appliedFilters.groupId === 'all' || member.groupId === appliedFilters.groupId;
         const matchName = appliedFilters.nameIds.length === 0 || appliedFilters.nameIds.includes(member.id);
         return matchGroup && matchName;
       }),
-    [members, appliedFilters],
+    [resolvedMembers, appliedFilters],
   );
 
   const adminRows = useMemo(
@@ -407,7 +425,7 @@ export default function App() {
 
         return {
           id: member.id,
-          name: member.name,
+          name: member.displayName || member.name,
           memberTypeLabel: getMemberTypeLabel(member.memberType),
           groupName: member.groupName || '-',
           attendanceType,
@@ -447,6 +465,39 @@ export default function App() {
   const closeAddMemberModal = () => {
     setShowAddMemberModal(false);
     setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
+  };
+
+  const syncMembersAfterWrite = async (newMember) => {
+    if (!hasSupabaseEnv) {
+      const nextMembers = [...members, newMember];
+      setMembers(nextMembers);
+      setAppBootstrap((prev) => ({
+        ...prev,
+        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
+      }));
+      return nextMembers;
+    }
+
+    try {
+      const latestMemberRows = await getMembers();
+      const nextMembers = latestMemberRows.map((row) => buildAppMemberFromRow(row, appBootstrap.groups));
+
+      setMembers(nextMembers);
+      setAppBootstrap((prev) => ({
+        ...prev,
+        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
+      }));
+      return nextMembers;
+    } catch (error) {
+      console.warn('[app] member refresh after save failed, falling back to local state', error);
+      const nextMembers = [...members, newMember];
+      setMembers(nextMembers);
+      setAppBootstrap((prev) => ({
+        ...prev,
+        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
+      }));
+      return nextMembers;
+    }
   };
 
   const applyAttendanceRecordState = (nextRecord) => {
@@ -502,6 +553,7 @@ export default function App() {
 
   const handleConfirmAttendance = async () => {
     if (!confirmTarget) return;
+    const confirmTargetLabel = confirmTarget.displayName || confirmTarget.name;
 
     try {
       const syncedRecord = await persistAttendanceTypeChange({
@@ -514,7 +566,7 @@ export default function App() {
       applyAttendanceRecordState(syncedRecord);
       setConfirmTarget(null);
       setQuery('');
-      setToast(`${confirmTarget.name} 출석이 완료됐어요`);
+      setToast(`${confirmTargetLabel} 출석이 완료됐어요`);
     } catch (error) {
       console.error('[app] kiosk attendance save failed', error);
       setToast('출석 저장 중 오류가 발생했어요');
@@ -548,12 +600,7 @@ export default function App() {
         name: trimmedName,
       });
       const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
-
-      setMembers((prev) => [...prev, appMember]);
-      setAppBootstrap((prev) => ({
-        ...prev,
-        totalMemberCount: prev.totalMemberCount + (savedMemberRow.is_active === false ? 0 : 1),
-      }));
+      await syncMembersAfterWrite(appMember);
 
       const syncedAttendanceRecord = await persistAttendanceTypeChange({
         memberId: savedMemberRow.id,
@@ -607,7 +654,8 @@ export default function App() {
   };
 
   const handleAdminAttendanceTypeChange = async (memberId, nextAttendanceType) => {
-    const member = members.find((item) => item.id === memberId);
+    const member = membersById[memberId];
+    const memberLabel = member?.displayName || member?.name;
 
     try {
       const syncedRecord = await persistAttendanceTypeChange({
@@ -619,8 +667,8 @@ export default function App() {
 
       applyAttendanceRecordState(syncedRecord);
 
-      if (member) {
-        setToast(`${member.name} 출결을 ${getAttendanceTypeLabel(nextAttendanceType)}로 변경했어요`);
+      if (memberLabel) {
+        setToast(`${memberLabel} 출결을 ${getAttendanceTypeLabel(nextAttendanceType)}로 변경했어요`);
       }
     } catch (error) {
       console.error('[app] admin attendance change failed', error);
@@ -659,7 +707,7 @@ export default function App() {
       ...prev,
       groupId,
       nameIds: prev.nameIds.filter((memberId) =>
-        members.some((member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId)),
+        resolvedMembers.some((member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId)),
       ),
     }));
   };
@@ -769,6 +817,7 @@ export default function App() {
     const trimmedName = addMemberDraft.name.trim();
     const isNewcomerGroup = isNewcomerGroupId(appBootstrap.groups, addMemberDraft.groupId);
     const memberType = isNewcomerGroup ? addMemberDraft.memberType : 'registered';
+    const expectedDisplayName = addMemberNamePreview?.expectedDisplayName || trimmedName;
 
     if (!selectedGroup) {
       console.error('[app] add member failed: selected group not found', addMemberDraft.groupId);
@@ -790,12 +839,10 @@ export default function App() {
         name: trimmedName,
       });
       const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
-
-      setMembers((prev) => [...prev, appMember]);
-      setAppBootstrap((prev) => ({
-        ...prev,
-        totalMemberCount: prev.totalMemberCount + (savedMemberRow.is_active === false ? 0 : 1),
-      }));
+      const syncedMembers = await syncMembersAfterWrite(appMember);
+      const createdMemberDisplayName =
+        resolveMemberDisplayNames(syncedMembers).find((member) => member.id === savedMemberRow.id)?.displayName ||
+        expectedDisplayName;
 
       if (isNewcomerGroup) {
         setNewcomerIntakes((prev) => [
@@ -813,7 +860,7 @@ export default function App() {
 
       setShowAddMemberModal(false);
       setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
-      setToast(`${trimmedName} 청년을 추가했어요`);
+      setToast(`${createdMemberDisplayName} 청년을 추가했어요`);
     } catch (error) {
       console.error('[app] add member save failed', error);
       setToast('청년 추가 저장 중 오류가 발생했어요');
@@ -835,6 +882,7 @@ export default function App() {
             {letter}
           </span>
         ))}
+        {member.nameSuffix ? <span>{member.nameSuffix}</span> : null}
         {member.groupName ? <span className="ml-3 text-black/25 font-medium">{member.groupName}</span> : null}
       </>
     );
@@ -866,6 +914,8 @@ export default function App() {
           canSave: Boolean(addMemberDraft.name.trim() && addMemberDraft.groupId),
           draft: addMemberDraft,
           groupOptions: addMemberGroupOptions,
+          helperText: addMemberNameGuide,
+          previewDisplayName: addMemberNamePreview?.expectedDisplayName || null,
           isNewcomerGroupSelected: isNewcomerGroupId(appBootstrap.groups, addMemberDraft.groupId),
           isOpen: showAddMemberModal,
           onClose: closeAddMemberModal,

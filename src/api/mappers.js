@@ -60,12 +60,14 @@ export function mapMemberRow(row, groupsById) {
   const group = row.group_id ? groupsById[row.group_id] : null;
 
   return {
+    createdAt: row.created_at || null,
     id: row.id,
     name: row.name,
     memberType: row.member_type,
     groupId: row.group_id || null,
     groupName: group?.name || null,
     isActive: row.is_active !== false,
+    updatedAt: row.updated_at || null,
   };
 }
 

@@ -17,7 +17,8 @@ export async function getMembers() {
   const { data, error } = await supabase
     .from('members')
     .select('id, name, member_type, group_id, is_active, created_at, updated_at')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
 
   if (error) {
     throw new Error(`[members] read failed: ${error.message}`);

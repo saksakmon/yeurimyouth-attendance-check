@@ -688,6 +688,15 @@ export default function AdminDashboardScreen({
                   className="admin-control admin-input mt-2 w-full"
                   placeholder="이름 입력"
                 />
+                {addMember.helperText ? (
+                  <div className="mt-2 text-sm leading-[1.55] text-black/45">{addMember.helperText}</div>
+                ) : null}
+                {addMember.previewDisplayName ? (
+                  <div className="mt-1 space-y-1">
+                    <div className="text-sm font-medium text-black/58">예상 표시 이름: {addMember.previewDisplayName}</div>
+                    <div className="text-xs leading-[1.55] text-black/35">저장 시점 상황에 따라 실제 표시 이름은 달라질 수 있어요.</div>
+                  </div>
+                ) : null}
               </div>
 
               <div>

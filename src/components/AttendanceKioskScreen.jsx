@@ -176,7 +176,7 @@ export default function AttendanceKioskScreen({
               <div className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl lg:p-8">
                 <div className="text-[30px] font-semibold tracking-tight lg:text-[34px]">출석할까요?</div>
                 <div className="mt-4 text-xl leading-[1.5] text-black/70 lg:text-[24px]">
-                  {confirmTarget.name}
+                  {confirmTarget.displayName || confirmTarget.name}
                   {confirmTarget.groupName ? ` · ${confirmTarget.groupName}` : ''}
                   {' '}으로 출석할까요?
                 </div>

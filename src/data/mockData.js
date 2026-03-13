@@ -75,13 +75,13 @@ export const INITIAL_MEMBERS = [
   { id: 'member-8', name: '이은수', memberType: 'visitor', groupId: 'group-newcomer', groupName: '새가족숲' },
 ];
 
-export const MOCK_MEMBERS = INITIAL_MEMBERS.map((member) => ({
+export const MOCK_MEMBERS = INITIAL_MEMBERS.map((member, index) => ({
   id: member.id,
   name: member.name,
   member_type: member.memberType,
   group_id: member.groupId,
   is_active: true,
-  created_at: '2026-01-12T00:00:00+09:00',
+  created_at: `2026-01-12T${String(9 + Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00+09:00`,
   updated_at: '2026-03-13T00:00:00+09:00',
 }));
 
