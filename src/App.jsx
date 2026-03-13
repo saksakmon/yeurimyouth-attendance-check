@@ -365,7 +365,7 @@ export default function App() {
   const addMemberNameGuide = useMemo(() => {
     if (!addMemberNamePreview) return null;
 
-    return '동명이인이 있어요. 원활한 관리를 위해 생성시 이름 뒤 알파벳이 붙어요.';
+    return '동명이인이 있어요. 생성 시 이름 뒤 알파벳이 붙어요.';
   }, [addMemberNamePreview]);
 
   const appliedResolvedWeekKeys = useMemo(
