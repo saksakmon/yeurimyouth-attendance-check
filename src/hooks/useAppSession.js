@@ -111,6 +111,7 @@ export function useAppSession() {
       can: (permission) => hasPermission(session, permission),
       canAccessAdminSection: (section) => canAccessAdminSection(session, section),
       canAccessScreen: (screen) => canAccessScreen(session, screen),
+      availableAccounts: adapter.availableAccounts || [],
       devCredentialsHint: adapter.devCredentialsHint,
       currentUser: session?.user || null,
       isAuthenticated: Boolean(session?.isAuthenticated),
@@ -125,6 +126,17 @@ export function useAppSession() {
       signOut,
       status,
     }),
-    [adapter.devCredentialsHint, adapter.mode, isSigningIn, isSigningOut, refreshSession, session, signIn, signOut, status],
+    [
+      adapter.availableAccounts,
+      adapter.devCredentialsHint,
+      adapter.mode,
+      isSigningIn,
+      isSigningOut,
+      refreshSession,
+      session,
+      signIn,
+      signOut,
+      status,
+    ],
   );
 }

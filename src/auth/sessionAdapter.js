@@ -2,13 +2,29 @@ import { ROLES, normalizeRole } from './permissions.js';
 import { hasSupabaseEnv, supabase } from '../lib/supabase.js';
 
 const LOCAL_ADMIN_SESSION_STORAGE_KEY = 'yeurim-admin-local-session-v1';
-
-const DEV_ADMIN_DEFAULTS = {
-  email: import.meta.env.VITE_DEV_ADMIN_EMAIL || 'admin@example.com',
-  name: import.meta.env.VITE_DEV_ADMIN_NAME || '운영 관리자',
-  password: import.meta.env.VITE_DEV_ADMIN_PASSWORD || 'admin1234',
-  role: normalizeRole(import.meta.env.VITE_DEV_ADMIN_ROLE) || ROLES.superAdmin,
-};
+const DEFAULT_LOCAL_ADMIN_ACCOUNTS = [
+  {
+    email: 'superadmin@example.com',
+    id: 'local-super-admin',
+    name: '총관리자',
+    password: 'super1234',
+    role: ROLES.superAdmin,
+  },
+  {
+    email: 'admin@example.com',
+    id: 'local-admin',
+    name: '운영 관리자',
+    password: 'admin1234',
+    role: ROLES.admin,
+  },
+  {
+    email: 'leader@example.com',
+    id: 'local-leader',
+    name: '출결 리더',
+    password: 'leader1234',
+    role: ROLES.leader,
+  },
+];
 
 function safeLocalStorage() {
   if (typeof window === 'undefined') return null;
@@ -34,6 +50,13 @@ function parseRoleOverrides(rawValue) {
 }
 
 const ROLE_OVERRIDES = parseRoleOverrides(import.meta.env.VITE_ADMIN_ROLE_OVERRIDES);
+
+function getLocalAdminAccounts() {
+  return DEFAULT_LOCAL_ADMIN_ACCOUNTS.map((account) => ({
+    ...account,
+    role: normalizeRole(account.role) || ROLES.admin,
+  }));
+}
 
 function resolveUserName(user) {
   const metadataName =
@@ -156,11 +179,21 @@ function clearLocalDevSession() {
 }
 
 function createLocalDevAdapter() {
+  const localAdminAccounts = getLocalAdminAccounts();
+
   return {
-    devCredentialsHint: {
-      email: DEV_ADMIN_DEFAULTS.email,
-      password: DEV_ADMIN_DEFAULTS.password,
-    },
+    availableAccounts: localAdminAccounts.map(({ email, name, password, role }) => ({
+      email,
+      name,
+      password,
+      role,
+    })),
+    devCredentialsHint: localAdminAccounts[0]
+      ? {
+          email: localAdminAccounts[0].email,
+          password: localAdminAccounts[0].password,
+        }
+      : null,
     mode: 'local',
     async getCurrentSession() {
       return getLocalDevSession();
@@ -181,23 +214,16 @@ function createLocalDevAdapter() {
       const normalizedEmail = String(email || '')
         .trim()
         .toLowerCase();
+      const matchedAccount = localAdminAccounts.find(
+        (account) => account.email.toLowerCase() === normalizedEmail && account.password === String(password || ''),
+      );
 
-      if (
-        normalizedEmail !== DEV_ADMIN_DEFAULTS.email.toLowerCase() ||
-        String(password || '') !== DEV_ADMIN_DEFAULTS.password
-      ) {
+      if (!matchedAccount) {
         throw new Error('이메일 또는 비밀번호를 확인해 주세요.');
       }
 
-      const user = {
-        email: DEV_ADMIN_DEFAULTS.email,
-        id: 'local-admin-user',
-        name: DEV_ADMIN_DEFAULTS.name,
-        role: DEV_ADMIN_DEFAULTS.role,
-      };
-
-      setLocalDevSession(user);
-      return buildSessionFromUser(user, 'local');
+      setLocalDevSession(matchedAccount);
+      return buildSessionFromUser(matchedAccount, 'local');
     },
     async signOut() {
       clearLocalDevSession();
@@ -212,6 +238,7 @@ function createSupabaseAdapter() {
   };
 
   return {
+    availableAccounts: [],
     devCredentialsHint: null,
     mode: 'supabase',
     getCurrentSession,

@@ -11,6 +11,7 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
   const hasAdminAccess = auth.canAccessScreen(APP_SCREENS.adminDashboard);
   const isUnauthorizedAccount = auth.isAuthenticated && !hasAdminAccess;
   const canSubmit = Boolean(email.trim() && password.trim()) && !auth.isSigningIn;
+  const authModeLabel = auth.mode === 'supabase' ? 'Supabase Auth' : 'Local Fallback Auth';
   const sessionLabel = useMemo(() => {
     if (!auth.currentUser) return '';
 
@@ -89,6 +90,9 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
                 ? '로그인된 계정의 관리자 권한을 확인하지 못했어요.'
                 : '이메일과 비밀번호로 관리자 세션을 시작할 수 있어요.'}
             </div>
+            <div className="mt-4 inline-flex rounded-full border border-black/8 bg-black/[0.03] px-3 py-1 text-[12px] font-semibold text-black/56">
+              현재 auth mode · {authModeLabel}
+            </div>
 
             {auth.isLoading ? (
               <div className="mt-8 rounded-[16px] border border-black/6 bg-black/[0.02] px-4 py-5 text-sm text-black/58">
@@ -125,12 +129,39 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
                   <div className="mt-6 rounded-[16px] border border-[rgba(22,119,255,0.12)] bg-[rgba(22,119,255,0.06)] px-4 py-4 text-sm text-black/62">
                     <div className="font-semibold text-black/74">로컬 개발 모드</div>
                     <div className="mt-1.5 leading-[1.6]">
-                      현재는 Supabase Auth 대신 로컬 개발 계정으로 인증해요.
-                      <br />
-                      {auth.devCredentialsHint?.email} / {auth.devCredentialsHint?.password}
+                      현재는 Supabase Auth 대신 로컬 테스트 계정으로 인증해요.
+                    </div>
+                    <div className="mt-3 overflow-hidden rounded-[14px] border border-black/6 bg-white/84">
+                      <table className="w-full border-collapse text-left text-[12px]">
+                        <thead className="bg-black/[0.03]">
+                          <tr>
+                            <th className="px-3 py-2 font-semibold text-black/48">Role</th>
+                            <th className="px-3 py-2 font-semibold text-black/48">Email</th>
+                            <th className="px-3 py-2 font-semibold text-black/48">Password</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {auth.availableAccounts.map((account) => (
+                            <tr key={account.email} className="border-t border-black/6">
+                              <td className="px-3 py-2 text-black/64">{account.role}</td>
+                              <td className="px-3 py-2 font-medium text-black/74">{account.email}</td>
+                              <td className="px-3 py-2 text-black/64">{account.password}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="mt-6 rounded-[16px] border border-[rgba(22,119,255,0.12)] bg-[rgba(22,119,255,0.06)] px-4 py-4 text-sm text-black/62">
+                    <div className="font-semibold text-black/74">Supabase Auth 모드</div>
+                    <div className="mt-1.5 leading-[1.65]">
+                      최초 관리자 계정은 Supabase Auth에서 이메일/비밀번호로 만든 뒤,
+                      <br />
+                      `app_metadata.admin_role` 또는 `VITE_ADMIN_ROLE_OVERRIDES`로 역할을 연결해야 해요.
+                    </div>
+                  </div>
+                )}
 
                 <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
                   <div>
