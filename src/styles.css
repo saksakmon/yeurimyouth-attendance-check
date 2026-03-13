@@ -338,16 +338,15 @@ select:hover {
   top: calc(100% + 10px);
   left: 0;
   z-index: 24;
-  min-width: min(560px, calc(100vw - 48px));
-  max-width: min(660px, calc(100vw - 48px));
-  max-height: min(520px, calc(100vh - 120px));
-  overflow: auto;
+  min-width: min(680px, calc(100vw - 48px));
+  max-width: min(748px, calc(100vw - 48px));
+  overflow: hidden;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.995);
-  padding: 16px;
+  padding: 18px 20px 16px;
   box-shadow:
-    0 10px 24px rgba(15, 23, 42, 0.08),
-    0 18px 32px rgba(15, 23, 42, 0.06);
+    0 10px 22px rgba(15, 23, 42, 0.07),
+    0 16px 28px rgba(15, 23, 42, 0.05);
 }
 
 .admin-range-calendar-header {
@@ -355,7 +354,7 @@ select:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .admin-range-calendar-title {
@@ -373,7 +372,7 @@ select:hover {
 .admin-range-calendar-months {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 24px;
 }
 
 .admin-range-calendar-month {
@@ -381,7 +380,7 @@ select:hover {
 }
 
 .admin-range-calendar-month-title {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   text-align: center;
   font-size: 15px;
   font-weight: 700;
@@ -389,22 +388,28 @@ select:hover {
 }
 
 .admin-range-calendar-weekdays {
-  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(7, 36px);
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .admin-range-calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(7, 36px);
+  justify-content: center;
+  gap: 8px;
 }
 
 .admin-range-calendar-day {
   display: inline-flex;
-  min-height: 42px;
-  width: 100%;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   font-size: 13px;
   color: rgba(17, 24, 39, 0.72);
 }
@@ -435,13 +440,13 @@ select:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .admin-member-directory-filter-card-range-open {
-  padding-bottom: 360px;
+  padding-bottom: 340px;
 }
 
 .admin-calendar-header {
@@ -1045,7 +1050,7 @@ select:hover {
   .admin-range-calendar-panel {
     min-width: min(100%, calc(100vw - 32px));
     max-width: min(100%, calc(100vw - 32px));
-    max-height: calc(100vh - 96px);
+    overflow: auto;
     padding: 16px;
   }
 

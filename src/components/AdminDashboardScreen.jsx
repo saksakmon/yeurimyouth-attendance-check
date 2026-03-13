@@ -340,9 +340,9 @@ function DateRangePickerField({ label, onApply, onClose, onOpen, open, valueFrom
 
       const rect = rootRef.current.getBoundingClientRect();
       const viewportPadding = 24;
-      const maxWidth = Math.min(660, window.innerWidth - viewportPadding * 2);
-      const minWidth = Math.min(560, window.innerWidth - viewportPadding * 2);
-      let panelWidth = Math.min(maxWidth, Math.max(minWidth, rect.width + 220));
+      const maxWidth = Math.min(748, window.innerWidth - viewportPadding * 2);
+      const minWidth = Math.min(680, window.innerWidth - viewportPadding * 2);
+      let panelWidth = Math.min(maxWidth, Math.max(minWidth, rect.width + 320));
       const availableRight = window.innerWidth - rect.left - viewportPadding;
       const offsetLeft = Math.min(0, availableRight - panelWidth);
       const maxNegativeOffset = -(rect.left - viewportPadding);
@@ -480,13 +480,9 @@ function DateRangePickerField({ label, onApply, onClose, onOpen, open, valueFrom
             <button
               type="button"
               className="admin-calendar-footer-button"
-              onClick={() => {
-                setDraftRange({ from: '', to: '' });
-                onApply('', '');
-                onClose();
-              }}
+              onClick={onClose}
             >
-              지우기
+              닫기
             </button>
             <AdminButton
               variant="primary"
