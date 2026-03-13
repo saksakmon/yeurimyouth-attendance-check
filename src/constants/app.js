@@ -7,9 +7,27 @@ export const APP_SCREENS = {
   adminDashboard: 'adminDashboard',
 };
 
+export const APP_PATHS = {
+  landing: '/',
+  kiosk: '/kiosk',
+  admin: '/admin',
+  adminAttendance: '/admin/attendance',
+  adminMembers: '/admin/members',
+};
+
 export const ADMIN_SECTIONS = {
   attendance: 'attendance',
   members: 'members',
+};
+
+export const ADMIN_SECTION_PATHS = {
+  [ADMIN_SECTIONS.attendance]: APP_PATHS.adminAttendance,
+  [ADMIN_SECTIONS.members]: APP_PATHS.adminMembers,
+};
+
+export const PATH_ADMIN_SECTION_MAP = {
+  [APP_PATHS.adminAttendance]: ADMIN_SECTIONS.attendance,
+  [APP_PATHS.adminMembers]: ADMIN_SECTIONS.members,
 };
 
 export const MEMBER_DIRECTORY_FILTERS = {

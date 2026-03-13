@@ -3,30 +3,32 @@ import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
 import AdminLoginScreen from './components/AdminLoginScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
-import { ADMIN_SECTIONS, APP_SCREENS, ACCENT_COLOR } from './constants/app.js';
+import { ADMIN_SECTIONS, ADMIN_SECTION_PATHS, APP_PATHS, APP_SCREENS, ACCENT_COLOR } from './constants/app.js';
 import { PERMISSIONS } from './auth/permissions.js';
 import { getNameHighlightRange } from './domain/kiosk/search.js';
 import { findNewcomerGroup } from './domain/members/memberHelpers.js';
 import { useAdminAttendanceController } from './hooks/useAdminAttendanceController.js';
 import { useAppBootstrapState } from './hooks/useAppBootstrapState.js';
+import { buildAdminEntryPath, getDefaultAdminPath, useAppRouter } from './hooks/useAppRouter.js';
 import { useAppSession } from './hooks/useAppSession.js';
 import { useKioskController } from './hooks/useKioskController.js';
 import { useMemberDirectoryController } from './hooks/useMemberDirectoryController.js';
 import { useResolvedMemberState } from './hooks/useResolvedMemberState.js';
 
-const { useMemo, useState } = React;
+const { useEffect, useMemo, useRef } = React;
 
 export default function App() {
   const auth = useAppSession();
+  const router = useAppRouter();
   const { actions: appActions, state: appState } = useAppBootstrapState();
-  const [screen, setScreen] = useState(APP_SCREENS.preAttendanceConfirm);
-  const [adminSection, setAdminSection] = useState(ADMIN_SECTIONS.attendance);
 
   const memberState = useResolvedMemberState({
     memberChangeHistory: appState.memberChangeHistory,
     members: appState.members,
   });
   const newcomerGroup = useMemo(() => findNewcomerGroup(appState.appBootstrap.groups), [appState.appBootstrap.groups]);
+  const activeAdminSection = router.route.kind === 'adminSection' ? router.route.adminSection : ADMIN_SECTIONS.attendance;
+  const previousAdminSectionRef = useRef(activeAdminSection);
   const adminAccess = useMemo(
     () => ({
       canAccessMembers: auth.canAccessAdminSection(ADMIN_SECTIONS.members),
@@ -34,6 +36,10 @@ export default function App() {
       canCreateMembers: auth.can(PERMISSIONS.memberCreate),
       canViewAudit: auth.can(PERMISSIONS.auditView),
     }),
+    [auth],
+  );
+  const defaultAdminPath = useMemo(
+    () => getDefaultAdminPath(auth.canAccessAdminSection),
     [auth],
   );
 
@@ -78,18 +84,7 @@ export default function App() {
   });
 
   const handleOpenAdmin = () => {
-    if (!auth.isAuthenticated) {
-      setScreen(APP_SCREENS.adminLogin);
-      return;
-    }
-
-    if (!auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
-      appActions.setToast('관리자 권한이 없는 계정이에요');
-      setScreen(APP_SCREENS.adminLogin);
-      return;
-    }
-
-    setScreen(APP_SCREENS.adminDashboard);
+    router.navigate(APP_PATHS.admin);
   };
 
   const handleBackToKiosk = () => {
@@ -98,7 +93,7 @@ export default function App() {
       return;
     }
 
-    setScreen(APP_SCREENS.attendanceKiosk);
+    router.navigate(APP_PATHS.kiosk);
   };
 
   const handleAdminSectionChange = (nextSection) => {
@@ -107,18 +102,15 @@ export default function App() {
       return;
     }
 
-    setAdminSection(nextSection);
-    adminAttendance.actions.resetSectionState();
-    memberDirectory.actions.resetSectionState();
+    router.navigate(ADMIN_SECTION_PATHS[nextSection]);
   };
 
   const handleAdminSignOut = async () => {
     try {
       await auth.signOut();
-      setAdminSection(ADMIN_SECTIONS.attendance);
-      setScreen(APP_SCREENS.attendanceKiosk);
       adminAttendance.actions.resetSectionState();
       memberDirectory.actions.resetSectionState();
+      router.navigate(APP_PATHS.kiosk);
       appActions.setToast('로그아웃했어요');
     } catch (error) {
       console.error('[auth] sign out failed', error);
@@ -126,24 +118,64 @@ export default function App() {
     }
   };
 
-  React.useEffect(() => {
-    if (screen === APP_SCREENS.adminDashboard && !auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
-      setScreen(APP_SCREENS.adminLogin);
+  useEffect(() => {
+    const nextAdminSection = router.route.kind === 'adminSection' ? router.route.adminSection : null;
+    const previousSection = previousAdminSectionRef.current;
+
+    if (nextAdminSection && nextAdminSection !== previousSection) {
+      adminAttendance.actions.resetSectionState();
+      memberDirectory.actions.resetSectionState();
     }
-  }, [auth, screen]);
 
-  React.useEffect(() => {
-    if (screen !== APP_SCREENS.adminLogin) return;
-    if (!auth.isAuthenticated) return;
-    if (!auth.canAccessScreen(APP_SCREENS.adminDashboard)) return;
+    previousAdminSectionRef.current = nextAdminSection;
+  }, [adminAttendance.actions, memberDirectory.actions, router.route.adminSection, router.route.kind]);
 
-    setScreen(APP_SCREENS.adminDashboard);
-  }, [auth, screen]);
+  useEffect(() => {
+    if (router.route.kind === 'unknown') {
+      router.replace(APP_PATHS.landing);
+      return;
+    }
 
-  React.useEffect(() => {
-    if (auth.canAccessAdminSection(adminSection)) return;
-    setAdminSection(ADMIN_SECTIONS.attendance);
-  }, [adminSection, auth]);
+    if (router.route.kind === 'adminUnknown') {
+      router.replace(APP_PATHS.admin);
+      return;
+    }
+
+    if (router.route.kind === 'adminSection' && !auth.isAuthenticated) {
+      router.replace(buildAdminEntryPath(router.route.pathname));
+      return;
+    }
+
+    if (router.route.kind === 'adminSection' && auth.isAuthenticated && !auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
+      appActions.setToast('관리자 권한이 없는 계정이에요');
+      router.replace(APP_PATHS.admin);
+      return;
+    }
+
+    if (
+      router.route.kind === 'adminSection' &&
+      auth.isAuthenticated &&
+      auth.canAccessScreen(APP_SCREENS.adminDashboard) &&
+      !auth.canAccessAdminSection(router.route.adminSection)
+    ) {
+      appActions.setToast('해당 메뉴에 접근할 권한이 없어요');
+      router.replace(defaultAdminPath);
+      return;
+    }
+
+    if (router.route.kind === 'adminEntry' && auth.isAuthenticated && auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
+      const intendedPath =
+        router.route.nextAdminPath && Object.values(ADMIN_SECTION_PATHS).includes(router.route.nextAdminPath)
+          ? router.route.nextAdminPath
+          : defaultAdminPath;
+      router.replace(intendedPath);
+    }
+  }, [
+    appActions.setToast,
+    auth,
+    defaultAdminPath,
+    router,
+  ]);
 
   const renderName = (member) => {
     const highlightRange = getNameHighlightRange(member, kiosk.state.query);
@@ -166,20 +198,25 @@ export default function App() {
     );
   };
 
-  if (screen === APP_SCREENS.preAttendanceConfirm) {
+  if (router.route.kind === 'landing') {
     return (
       <PreAttendanceConfirmScreen
         accentColor={ACCENT_COLOR}
         attendanceMeta={appState.appBootstrap.currentAttendanceMeta}
-        onStart={() => setScreen(APP_SCREENS.attendanceKiosk)}
+        onStart={() => router.navigate(APP_PATHS.kiosk)}
       />
     );
   }
 
-  if (screen === APP_SCREENS.adminDashboard) {
+  if (
+    router.route.kind === 'adminSection' &&
+    auth.isAuthenticated &&
+    auth.canAccessScreen(APP_SCREENS.adminDashboard) &&
+    auth.canAccessAdminSection(router.route.adminSection)
+  ) {
     return (
       <AdminDashboardScreen
-        activeSection={adminSection}
+        activeSection={activeAdminSection}
         accentColor={ACCENT_COLOR}
         access={adminAccess}
         addMember={memberDirectory.addMemberProps}
@@ -187,7 +224,7 @@ export default function App() {
         filters={adminAttendance.filtersProps}
         memberDirectory={memberDirectory.memberDirectoryProps}
         navigation={{
-          activeSection: adminSection,
+          activeSection: activeAdminSection,
           canAccessMembers: adminAccess.canAccessMembers,
           canAccessSettings: adminAccess.canAccessSettings,
           currentUser: auth.currentUser,
@@ -206,7 +243,7 @@ export default function App() {
     );
   }
 
-  if (screen === APP_SCREENS.adminLogin) {
+  if (router.route.kind === 'adminEntry' || router.route.kind === 'adminSection' || router.route.kind === 'adminUnknown') {
     return <AdminLoginScreen accentColor={ACCENT_COLOR} auth={auth} onBackToKiosk={handleBackToKiosk} />;
   }
 
