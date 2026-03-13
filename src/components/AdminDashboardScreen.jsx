@@ -154,6 +154,27 @@ function isSameCalendarDate(a, b) {
   );
 }
 
+function compareCalendarDate(a, b) {
+  if (!a || !b) return 0;
+
+  const left = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const right = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function isCalendarDateWithinRange(date, start, end) {
+  if (!date || !start || !end) return false;
+  return compareCalendarDate(date, start) >= 0 && compareCalendarDate(date, end) <= 0;
+}
+
+function formatDateRangeLabel(from, to) {
+  if (from && to) return `${from} → ${to}`;
+  if (from) return `${from} → 종료일`;
+  if (to) return `시작일 → ${to}`;
+  return '시작일 → 종료일';
+}
+
 function buildCalendarDays(viewDate) {
   const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
   const calendarStart = new Date(monthStart);
@@ -288,114 +309,194 @@ function SingleSelectField({
   );
 }
 
-function DatePickerField({ label, onChange, onClose, onOpen, open, placeholder, value, wrapperRef }) {
-  const [viewDate, setViewDate] = useState(() => getCalendarMonthBase(value));
-  const selectedDate = useMemo(() => parseDateTextValue(value), [value]);
-  const calendarDays = useMemo(() => buildCalendarDays(viewDate), [viewDate]);
+function DateRangePickerField({ label, onApply, onClose, onOpen, open, valueFrom, valueTo, wrapperRef }) {
+  const rootRef = useRef(null);
+  const [panelStyle, setPanelStyle] = useState(null);
+  const [leftMonth, setLeftMonth] = useState(() => getCalendarMonthBase(valueFrom || valueTo));
+  const [draftRange, setDraftRange] = useState({ from: valueFrom || '', to: valueTo || '' });
   const today = useMemo(() => new Date(), []);
+  const rangeStart = useMemo(() => parseDateTextValue(draftRange.from), [draftRange.from]);
+  const rangeEnd = useMemo(() => parseDateTextValue(draftRange.to), [draftRange.to]);
+  const rightMonth = useMemo(() => new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 1), [leftMonth]);
+  const leftMonthDays = useMemo(() => buildCalendarDays(leftMonth), [leftMonth]);
+  const rightMonthDays = useMemo(() => buildCalendarDays(rightMonth), [rightMonth]);
+  const summaryLabel = formatDateRangeLabel(valueFrom, valueTo);
 
   useEffect(() => {
-    if (open) {
-      setViewDate(getCalendarMonthBase(value));
+    if (!open) return;
+
+    setDraftRange({ from: valueFrom || '', to: valueTo || '' });
+    setLeftMonth(getCalendarMonthBase(valueFrom || valueTo));
+  }, [open, valueFrom, valueTo]);
+
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) {
+      setPanelStyle(null);
+      return undefined;
     }
-  }, [open, value]);
 
-  return (
-    <div ref={wrapperRef} className="relative">
-      {label ? <div className="admin-field-label">{label}</div> : null}
+    const updatePanelPosition = () => {
+      if (!rootRef.current) return;
 
-      <div className={`admin-control admin-date-field ${open ? 'admin-control-open' : ''}`}>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={value}
-          onChange={(event) => onChange(formatDateTextInput(event.target.value))}
-          onClick={onOpen}
-          onFocus={onOpen}
-          className="admin-input admin-date-input w-full"
-          placeholder={placeholder}
-        />
-        <AdminButton
-          variant="tertiary"
-          icon
-          className="admin-date-trigger"
-          onClick={onOpen}
-          aria-label={`${placeholder} 달력 열기`}
-        >
-          <span className="admin-date-trigger-icon" />
-        </AdminButton>
+      const rect = rootRef.current.getBoundingClientRect();
+      const panelWidth = Math.min(760, window.innerWidth - 40);
+      const left = Math.max(20, Math.min(rect.left, window.innerWidth - panelWidth - 20));
+      const top = Math.min(window.innerHeight - 520, rect.bottom + 10);
+
+      setPanelStyle({
+        left,
+        top: Math.max(12, top),
+        width: panelWidth,
+      });
+    };
+
+    updatePanelPosition();
+    window.addEventListener('resize', updatePanelPosition);
+    window.addEventListener('scroll', updatePanelPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePanelPosition);
+      window.removeEventListener('scroll', updatePanelPosition, true);
+    };
+  }, [open]);
+
+  const handleRef = (node) => {
+    rootRef.current = node;
+    if (wrapperRef) wrapperRef(node);
+  };
+
+  const handleDayClick = (selectedDate) => {
+    const nextValue = formatDateTextValueFromDate(selectedDate);
+
+    setDraftRange((prev) => {
+      const prevFrom = parseDateTextValue(prev.from);
+      const prevTo = parseDateTextValue(prev.to);
+
+      if (!prevFrom || (prevFrom && prevTo)) {
+        return { from: nextValue, to: '' };
+      }
+
+      if (compareCalendarDate(selectedDate, prevFrom) < 0) {
+        return { from: nextValue, to: prev.from };
+      }
+
+      return { from: prev.from, to: nextValue };
+    });
+  };
+
+  const renderMonth = (monthDate, days) => (
+    <div key={monthDate.toISOString()} className="admin-range-calendar-month">
+      <div className="admin-range-calendar-month-title">{getCalendarMonthLabel(monthDate)}</div>
+      <div className="admin-calendar-weekdays admin-range-calendar-weekdays">
+        {CALENDAR_WEEKDAYS.map((weekday) => (
+          <span key={`${monthDate.toISOString()}-${weekday}`}>{weekday}</span>
+        ))}
       </div>
 
-      {open && (
-        <div className="admin-dropdown-panel admin-calendar-panel">
-          <div className="admin-calendar-header">
-            <button
-              type="button"
-              className="admin-calendar-nav"
-              onClick={() => setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-              aria-label="이전 달"
-            >
-              ‹
-            </button>
-            <div className="admin-calendar-month">{getCalendarMonthLabel(viewDate)}</div>
-            <button
-              type="button"
-              className="admin-calendar-nav"
-              onClick={() => setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-              aria-label="다음 달"
-            >
-              ›
-            </button>
-          </div>
+      <div className="admin-range-calendar-grid">
+        {days.map((day) => {
+          const isSelectedStart = isSameCalendarDate(day.date, rangeStart);
+          const isSelectedEnd = isSameCalendarDate(day.date, rangeEnd);
+          const isInRange = isCalendarDateWithinRange(day.date, rangeStart, rangeEnd);
 
-          <div className="admin-calendar-weekdays">
-            {CALENDAR_WEEKDAYS.map((weekday) => (
-              <span key={weekday}>{weekday}</span>
-            ))}
-          </div>
+          return (
+            <button
+              key={day.key}
+              type="button"
+              className={[
+                'admin-range-calendar-day',
+                day.isCurrentMonth ? '' : 'admin-calendar-day-muted',
+                isInRange ? 'admin-range-calendar-day-in-range' : '',
+                isSelectedStart || isSelectedEnd ? 'admin-range-calendar-day-edge' : '',
+                isSameCalendarDate(day.date, today) ? 'admin-calendar-day-today' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => handleDayClick(day.date)}
+            >
+              {day.date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
-          <div className="admin-calendar-grid">
-            {calendarDays.map((day) => (
+  return (
+    <div ref={handleRef} className="relative">
+      {label ? <div className="admin-field-label">{label}</div> : null}
+
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`admin-control admin-control-button admin-range-field ${open ? 'admin-control-open' : ''}`}
+      >
+        <span className={`admin-range-field-value ${!valueFrom && !valueTo ? 'admin-control-placeholder' : ''}`}>
+          {summaryLabel}
+        </span>
+        <span className="admin-date-trigger" aria-hidden="true">
+          <span className="admin-date-trigger-icon" />
+        </span>
+      </button>
+
+      {open && panelStyle ? (
+        <div className="admin-dropdown-panel admin-range-calendar-panel" style={panelStyle}>
+          <div className="admin-range-calendar-header">
+            <div>
+              <div className="admin-range-calendar-title">등록일 범위 선택</div>
+              <div className="admin-range-calendar-summary">{formatDateRangeLabel(draftRange.from, draftRange.to)}</div>
+            </div>
+            <div className="flex items-center gap-1">
               <button
-                key={day.key}
                 type="button"
-                className={`admin-calendar-day ${day.isCurrentMonth ? '' : 'admin-calendar-day-muted'} ${
-                  isSameCalendarDate(day.date, selectedDate) ? 'admin-calendar-day-selected' : ''
-                } ${isSameCalendarDate(day.date, today) ? 'admin-calendar-day-today' : ''}`}
-                onClick={() => {
-                  onChange(formatDateTextValueFromDate(day.date));
-                  onClose();
-                }}
+                className="admin-calendar-nav"
+                onClick={() => setLeftMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                aria-label="이전 달"
               >
-                {day.date.getDate()}
+                ‹
               </button>
-            ))}
+              <button
+                type="button"
+                className="admin-calendar-nav"
+                onClick={() => setLeftMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                aria-label="다음 달"
+              >
+                ›
+              </button>
+            </div>
           </div>
 
-          <div className="admin-calendar-footer">
+          <div className="admin-range-calendar-months">
+            {renderMonth(leftMonth, leftMonthDays)}
+            {renderMonth(rightMonth, rightMonthDays)}
+          </div>
+
+          <div className="admin-range-calendar-footer">
             <button
               type="button"
               className="admin-calendar-footer-button"
               onClick={() => {
-                onChange('');
+                setDraftRange({ from: '', to: '' });
+                onApply('', '');
                 onClose();
               }}
             >
               지우기
             </button>
-            <button
-              type="button"
-              className="admin-calendar-footer-button admin-calendar-footer-button-strong"
+            <AdminButton
+              variant="primary"
+              className="min-w-[96px]"
+              style={{ backgroundColor: '#1677FF' }}
               onClick={() => {
-                onChange(formatDateTextValueFromDate(new Date()));
+                onApply(draftRange.from, draftRange.to);
                 onClose();
               }}
             >
-              오늘
-            </button>
+              적용
+            </AdminButton>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -569,28 +670,19 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
 
           <div>
             <div className="admin-field-label">등록일</div>
-            <div className="admin-date-range mt-2">
-              <DatePickerField
-                label=""
-                onChange={(value) => memberDirectory.filters.onDraftChange('registeredFrom', value)}
-                onClose={() => setOpenField(null)}
-                onOpen={() => setOpenField('member-directory-date-from')}
-                open={openField === 'member-directory-date-from'}
-                placeholder="시작일"
-                value={memberDirectory.filters.draft.registeredFrom}
-                wrapperRef={bindFieldRef('member-directory-date-from')}
-              />
-              <DatePickerField
-                label=""
-                onChange={(value) => memberDirectory.filters.onDraftChange('registeredTo', value)}
-                onClose={() => setOpenField(null)}
-                onOpen={() => setOpenField('member-directory-date-to')}
-                open={openField === 'member-directory-date-to'}
-                placeholder="종료일"
-                value={memberDirectory.filters.draft.registeredTo}
-                wrapperRef={bindFieldRef('member-directory-date-to')}
-              />
-            </div>
+            <DateRangePickerField
+              label=""
+              onApply={(from, to) => {
+                memberDirectory.filters.onDraftChange('registeredFrom', from);
+                memberDirectory.filters.onDraftChange('registeredTo', to);
+              }}
+              onClose={() => setOpenField(null)}
+              onOpen={() => setOpenField(openField === 'member-directory-date-range' ? null : 'member-directory-date-range')}
+              open={openField === 'member-directory-date-range'}
+              valueFrom={memberDirectory.filters.draft.registeredFrom}
+              valueTo={memberDirectory.filters.draft.registeredTo}
+              wrapperRef={bindFieldRef('member-directory-date-range')}
+            />
           </div>
 
           <div>
@@ -721,7 +813,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
                         <AdminButton variant="secondary" inline onClick={() => memberDirectory.editMember.onOpen(row.id)}>
                           수정
                         </AdminButton>
-                        <AdminButton variant="tertiary" inline onClick={() => memberDirectory.history.onOpen(row.id)}>
+                        <AdminButton variant="secondary" inline onClick={() => memberDirectory.history.onOpen(row.id)}>
                           이력
                         </AdminButton>
                         <AdminButton
@@ -914,7 +1006,7 @@ function MemberDirectoryHistoryModal({ history, isVisible, onClose }) {
   );
 }
 
-function MemberDirectoryBulkGroupModal({ bindFieldRef, bulkAction, isVisible, openField, setOpenField }) {
+function MemberDirectoryBulkGroupModal({ accentColor, bindFieldRef, bulkAction, isVisible, openField, setOpenField }) {
   const selectedGroupLabel =
     bulkAction.groupOptions.find((option) => option.value === bulkAction.selectedGroupId)?.label || '';
 
@@ -943,12 +1035,14 @@ function MemberDirectoryBulkGroupModal({ bindFieldRef, bulkAction, isVisible, op
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <AdminButton variant="secondary" onClick={bulkAction.onCancel}>
+          <AdminButton variant="secondary" className="w-full" onClick={bulkAction.onCancel}>
             취소
           </AdminButton>
           <AdminButton
             variant="primary"
+            className="w-full disabled:cursor-not-allowed"
             disabled={!bulkAction.selectedGroupId}
+            style={bulkAction.selectedGroupId ? { backgroundColor: accentColor } : undefined}
             onClick={bulkAction.onConfirm}
           >
             변경하기
@@ -1518,6 +1612,7 @@ export default function AdminDashboardScreen({
 
       {bulkGroupModal.shouldRender && memberDirectory.bulkAction.modal.isOpen && (
         <MemberDirectoryBulkGroupModal
+          accentColor={accentColor}
           bindFieldRef={bindFieldRef}
           bulkAction={memberDirectory.bulkAction.modal}
           isVisible={bulkGroupModal.isVisible}
