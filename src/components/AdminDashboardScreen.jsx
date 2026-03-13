@@ -249,19 +249,138 @@ function AttendanceTypeLabel({ type }) {
 }
 
 const MEMBER_DIRECTORY_FILTER_OPTIONS = [
-  { value: 'active', label: '활성' },
   { value: 'all', label: '전체' },
+  { value: 'active', label: '활성' },
   { value: 'inactive', label: '비활성' },
+];
+const MEMBER_DIRECTORY_TYPE_OPTIONS = [
+  { value: 'all', label: '전체' },
+  { value: 'regular', label: '등반' },
+  { value: 'newcomerRegistered', label: '새가족(등록)' },
+  { value: 'newcomerVisitor', label: '새가족(방문)' },
 ];
 
 function MemberStatusPill({ active }) {
   return <span className={`admin-status-pill ${active ? 'admin-status-pill-active' : 'admin-status-pill-inactive'}`}>{active ? '활성' : '비활성'}</span>;
 }
 
-function MemberDirectorySection({ accentColor, memberDirectory }) {
+function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, openField, setOpenField }) {
+  const selectedGroupLabel =
+    memberDirectory.filters.groupOptions.find((option) => option.value === memberDirectory.filters.draft.groupId)?.label || '';
+  const selectedTypeLabel =
+    MEMBER_DIRECTORY_TYPE_OPTIONS.find((option) => option.value === memberDirectory.filters.draft.type)?.label || '전체';
+
   return (
     <div className="min-h-0 flex-1 overflow-auto px-5 py-5 lg:px-8 lg:py-6">
-      <section className="grid gap-3 lg:grid-cols-3">
+      <section className="admin-info-banner" style={{ '--tw-ring-color': 'rgba(22, 119, 255, 0.08)' }}>
+        <span className="admin-info-banner-icon" aria-hidden="true">
+          i
+        </span>
+        <p className="admin-info-banner-text">
+          비활성화한 청년은 출결관리 표와 키오스크 검색 결과에서 제외되고, 인원관리에서 다시 활성화할 수 있어요.
+        </p>
+      </section>
+
+      <section className="admin-surface mt-4 p-4 lg:p-5">
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr_1.4fr_auto] xl:items-end">
+          <div>
+            <div className="admin-field-label">상태</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {MEMBER_DIRECTORY_FILTER_OPTIONS.map((option) => {
+                const active = memberDirectory.filters.draft.status === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => memberDirectory.filters.onDraftChange('status', option.value)}
+                    className={`admin-tab ${active ? 'admin-tab-active' : ''}`}
+                    style={active ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="admin-field-label">등록일</label>
+            <div className="admin-date-range mt-2">
+              <input
+                type="date"
+                value={memberDirectory.filters.draft.registeredFrom}
+                onChange={(event) => memberDirectory.filters.onDraftChange('registeredFrom', event.target.value)}
+                className="admin-control admin-input w-full"
+              />
+              <span className="admin-date-range-separator">~</span>
+              <input
+                type="date"
+                value={memberDirectory.filters.draft.registeredTo}
+                onChange={(event) => memberDirectory.filters.onDraftChange('registeredTo', event.target.value)}
+                className="admin-control admin-input w-full"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="admin-field-label">소속 숲</label>
+            <SingleSelectField
+              className="mt-2"
+              onOptionSelect={(value) => {
+                memberDirectory.filters.onDraftChange('groupId', value);
+                setOpenField(null);
+              }}
+              onToggleOpen={() =>
+                setOpenField(openField === 'member-directory-group' ? null : 'member-directory-group')
+              }
+              open={openField === 'member-directory-group'}
+              options={memberDirectory.filters.groupOptions}
+              placeholder="선택해 주세요"
+              selectedLabel={selectedGroupLabel}
+              selectedValue={memberDirectory.filters.draft.groupId}
+              wrapperRef={bindFieldRef('member-directory-group')}
+            />
+          </div>
+
+          <div>
+            <label className="admin-field-label">유형</label>
+            <SingleSelectField
+              className="mt-2"
+              onOptionSelect={(value) => {
+                memberDirectory.filters.onDraftChange('type', value);
+                setOpenField(null);
+              }}
+              onToggleOpen={() => setOpenField(openField === 'member-directory-type' ? null : 'member-directory-type')}
+              open={openField === 'member-directory-type'}
+              options={MEMBER_DIRECTORY_TYPE_OPTIONS}
+              selectedLabel={selectedTypeLabel}
+              selectedValue={memberDirectory.filters.draft.type}
+              wrapperRef={bindFieldRef('member-directory-type')}
+            />
+          </div>
+
+          <div className="flex min-w-[178px] flex-wrap items-end gap-2">
+            <button
+              type="button"
+              className="admin-button admin-button-primary min-w-[84px] disabled:cursor-not-allowed"
+              style={memberDirectory.filters.isDirty ? { backgroundColor: accentColor } : undefined}
+              disabled={!memberDirectory.filters.isDirty}
+              onClick={memberDirectory.filters.onApply}
+            >
+              검색
+            </button>
+            <button
+              type="button"
+              className="admin-button admin-button-secondary min-w-[84px]"
+              onClick={memberDirectory.filters.onReset}
+            >
+              초기화
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-4 grid gap-3 lg:grid-cols-3">
         <div className="admin-surface admin-card-hover p-4 lg:p-5">
           <div className="admin-overline">전체 회원</div>
           <div className="mt-4 text-[32px] font-semibold leading-none">{memberDirectory.summary.totalCount}명</div>
@@ -283,29 +402,6 @@ function MemberDirectorySection({ accentColor, memberDirectory }) {
         </div>
       </section>
 
-      <section className="admin-surface mt-4 p-4 lg:p-5">
-        <div className="admin-inline-note">
-          비활성화한 청년은 출결관리 표와 키오스크 검색 결과에서 제외되고, 인원관리에서 다시 활성화할 수 있어요.
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {MEMBER_DIRECTORY_FILTER_OPTIONS.map((option) => {
-            const active = memberDirectory.filter === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => memberDirectory.onFilterChange(option.value)}
-                className={`admin-tab ${active ? 'admin-tab-active' : ''}`}
-                style={active ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
       <section className="admin-surface mt-4 overflow-hidden">
         <div className="flex items-center justify-between border-b border-black/6 px-4 py-3">
           <div className="text-sm font-semibold text-black/65">총 {memberDirectory.rows.length}명</div>
@@ -316,8 +412,8 @@ function MemberDirectorySection({ accentColor, memberDirectory }) {
             <thead className="bg-black/[0.024] text-left">
               <tr>
                 <th className="px-4 py-3 font-semibold text-black/45">표시 이름</th>
-                <th className="px-4 py-3 font-semibold text-black/45">원본 이름</th>
-                <th className="px-4 py-3 font-semibold text-black/45">회원 유형</th>
+                <th className="px-4 py-3 font-semibold text-black/45">이름</th>
+                <th className="px-4 py-3 font-semibold text-black/45">유형</th>
                 <th className="px-4 py-3 font-semibold text-black/45">소속 숲</th>
                 <th className="px-4 py-3 font-semibold text-black/45">상태</th>
                 <th className="px-4 py-3 font-semibold text-black/45">등록일</th>
@@ -514,6 +610,10 @@ export default function AdminDashboardScreen({
     }
   }, [memberDirectory.editMember.isOpen, openField]);
 
+  useEffect(() => {
+    setOpenField(null);
+  }, [activeSection]);
+
   const selectedWeekChips = useMemo(() => {
     if (filters.draftWeekKeys.includes('ALL')) {
       return [<FilterChip key="all">전체</FilterChip>];
@@ -607,7 +707,13 @@ export default function AdminDashboardScreen({
           </div>
 
           {activeSection === 'members' ? (
-            <MemberDirectorySection accentColor={accentColor} memberDirectory={memberDirectory} />
+            <MemberDirectorySection
+              accentColor={accentColor}
+              bindFieldRef={bindFieldRef}
+              memberDirectory={memberDirectory}
+              openField={openField}
+              setOpenField={setOpenField}
+            />
           ) : (
             <div className="min-h-0 flex-1 overflow-auto px-5 py-5 lg:px-8 lg:py-6">
               <section className="admin-surface p-4 lg:p-5">

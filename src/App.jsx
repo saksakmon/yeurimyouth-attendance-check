@@ -27,6 +27,12 @@ const MEMBER_DIRECTORY_FILTERS = {
   all: 'all',
   inactive: 'inactive',
 };
+const MEMBER_DIRECTORY_TYPE_FILTERS = {
+  all: 'all',
+  regular: 'regular',
+  newcomerRegistered: 'newcomerRegistered',
+  newcomerVisitor: 'newcomerVisitor',
+};
 const RECENT_ABSENCE_WINDOW_SIZE = 3;
 const CHOSUNG_QUERY_PATTERN = /^[ㄱ-ㅎ]+$/;
 const CHOSUNG_LIST = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
@@ -112,6 +118,34 @@ function compareMemberDirectoryRows(a, b) {
   if (displayNameCompare !== 0) return displayNameCompare;
 
   return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+}
+
+function getMemberDirectoryTypeValue(member, groups) {
+  if (isNewcomerGroupId(groups, member?.groupId)) {
+    return member?.memberType === 'visitor'
+      ? MEMBER_DIRECTORY_TYPE_FILTERS.newcomerVisitor
+      : MEMBER_DIRECTORY_TYPE_FILTERS.newcomerRegistered;
+  }
+
+  return MEMBER_DIRECTORY_TYPE_FILTERS.regular;
+}
+
+function getMemberDirectoryTypeLabel(member, groups) {
+  const typeValue = getMemberDirectoryTypeValue(member, groups);
+
+  if (typeValue === MEMBER_DIRECTORY_TYPE_FILTERS.newcomerVisitor) return '새가족(방문)';
+  if (typeValue === MEMBER_DIRECTORY_TYPE_FILTERS.newcomerRegistered) return '새가족(등록)';
+  return '등반';
+}
+
+function isMemberWithinCreatedDateRange(member, registeredFrom, registeredTo) {
+  if (!registeredFrom && !registeredTo) return true;
+
+  const createdDate = String(member?.createdAt || '').slice(0, 10);
+  if (!createdDate) return false;
+  if (registeredFrom && createdDate < registeredFrom) return false;
+  if (registeredTo && createdDate > registeredTo) return false;
+  return true;
 }
 
 function findNewcomerGroup(groups) {
@@ -337,7 +371,24 @@ function areFiltersEqual(a, b) {
   );
 }
 
+function areMemberDirectoryFiltersEqual(a, b) {
+  return (
+    a.groupId === b.groupId &&
+    a.registeredFrom === b.registeredFrom &&
+    a.registeredTo === b.registeredTo &&
+    a.status === b.status &&
+    a.type === b.type
+  );
+}
+
 const FALLBACK_BOOTSTRAP = getFallbackAppBootstrapData();
+const DEFAULT_MEMBER_DIRECTORY_FILTERS = {
+  groupId: '',
+  registeredFrom: '',
+  registeredTo: '',
+  status: MEMBER_DIRECTORY_FILTERS.all,
+  type: MEMBER_DIRECTORY_TYPE_FILTERS.all,
+};
 
 export default function App() {
   const [appBootstrap, setAppBootstrap] = useState(() => FALLBACK_BOOTSTRAP);
@@ -367,7 +418,8 @@ export default function App() {
   const [adminActiveWeekKey, setAdminActiveWeekKey] = useState(FALLBACK_BOOTSTRAP.currentWeekKey);
   const [adminSelectedRowIds, setAdminSelectedRowIds] = useState([]);
   const [adminPendingBulkActionType, setAdminPendingBulkActionType] = useState(null);
-  const [memberDirectoryFilter, setMemberDirectoryFilter] = useState(MEMBER_DIRECTORY_FILTERS.active);
+  const [draftMemberDirectoryFilters, setDraftMemberDirectoryFilters] = useState(DEFAULT_MEMBER_DIRECTORY_FILTERS);
+  const [appliedMemberDirectoryFilters, setAppliedMemberDirectoryFilters] = useState(DEFAULT_MEMBER_DIRECTORY_FILTERS);
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editMemberDraft, setEditMemberDraft] = useState({
     name: '',
@@ -432,6 +484,10 @@ export default function App() {
   const resultState = getResultState(query, filtered);
   const canRegisterNewMember = Boolean(newMemberName.trim());
   const isFilterDirty = !areFiltersEqual(draftFilters, appliedFilters);
+  const isMemberDirectoryFilterDirty = !areMemberDirectoryFiltersEqual(
+    draftMemberDirectoryFilters,
+    appliedMemberDirectoryFilters,
+  );
   const addMemberNamePreview = useMemo(
     () => getNextMemberDisplayNamePreview(resolvedMembers, addMemberDraft.name),
     [resolvedMembers, addMemberDraft.name],
@@ -537,13 +593,32 @@ export default function App() {
     }),
     [activeMembers.length, resolvedMembers],
   );
+  const memberDirectoryGroupOptions = useMemo(
+    () => appBootstrap.groups.map((group) => ({ value: group.id, label: group.name })),
+    [appBootstrap.groups],
+  );
   const memberDirectoryRows = useMemo(
     () =>
       resolvedMembers
         .filter((member) => {
-          if (memberDirectoryFilter === MEMBER_DIRECTORY_FILTERS.all) return true;
-          if (memberDirectoryFilter === MEMBER_DIRECTORY_FILTERS.inactive) return !member.isActive;
-          return member.isActive;
+          const matchesStatus =
+            appliedMemberDirectoryFilters.status === MEMBER_DIRECTORY_FILTERS.all
+              ? true
+              : appliedMemberDirectoryFilters.status === MEMBER_DIRECTORY_FILTERS.inactive
+                ? !member.isActive
+                : member.isActive;
+          const matchesGroup = !appliedMemberDirectoryFilters.groupId || member.groupId === appliedMemberDirectoryFilters.groupId;
+          const matchesType =
+            appliedMemberDirectoryFilters.type === MEMBER_DIRECTORY_TYPE_FILTERS.all
+              ? true
+              : getMemberDirectoryTypeValue(member, appBootstrap.groups) === appliedMemberDirectoryFilters.type;
+          const matchesDate = isMemberWithinCreatedDateRange(
+            member,
+            appliedMemberDirectoryFilters.registeredFrom,
+            appliedMemberDirectoryFilters.registeredTo,
+          );
+
+          return matchesStatus && matchesGroup && matchesType && matchesDate;
         })
         .sort(compareMemberDirectoryRows)
         .map((member) => ({
@@ -553,11 +628,11 @@ export default function App() {
           groupName: member.groupName || '-',
           id: member.id,
           isActive: member.isActive,
-          memberTypeLabel: getMemberTypeLabel(member.memberType),
+          memberTypeLabel: getMemberDirectoryTypeLabel(member, appBootstrap.groups),
           rawName: member.name,
           statusLabel: member.isActive ? '활성' : '비활성',
         })),
-    [memberDirectoryFilter, resolvedMembers],
+    [appliedMemberDirectoryFilters, appBootstrap.groups, resolvedMembers],
   );
 
   useEffect(() => {
@@ -1098,6 +1173,19 @@ export default function App() {
 
   const adminGroupOptions = appBootstrap.groupFilterOptions;
   const addMemberGroupOptions = appBootstrap.addMemberGroupOptions;
+  const handleMemberDirectoryDraftChange = (field, value) => {
+    setDraftMemberDirectoryFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleApplyMemberDirectoryFilters = () => {
+    setAppliedMemberDirectoryFilters(draftMemberDirectoryFilters);
+  };
+
+  const handleResetMemberDirectoryFilters = () => {
+    setDraftMemberDirectoryFilters(DEFAULT_MEMBER_DIRECTORY_FILTERS);
+    setAppliedMemberDirectoryFilters(DEFAULT_MEMBER_DIRECTORY_FILTERS);
+  };
+
   const handleAdminSectionChange = (nextSection) => {
     setAdminSection(nextSection);
     setAdminPendingBulkActionType(null);
@@ -1168,8 +1256,14 @@ export default function App() {
             onOpen: handleOpenEditMember,
             onSave: handleEditMemberSave,
           },
-          filter: memberDirectoryFilter,
-          onFilterChange: setMemberDirectoryFilter,
+          filters: {
+            draft: draftMemberDirectoryFilters,
+            groupOptions: memberDirectoryGroupOptions,
+            isDirty: isMemberDirectoryFilterDirty,
+            onApply: handleApplyMemberDirectoryFilters,
+            onDraftChange: handleMemberDirectoryDraftChange,
+            onReset: handleResetMemberDirectoryFilters,
+          },
           onToggleActive: handleToggleMemberActive,
           rows: memberDirectoryRows,
           summary: memberDirectorySummary,

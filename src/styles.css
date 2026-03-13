@@ -157,6 +157,39 @@ select:hover {
   box-shadow: var(--admin-shadow-xs);
 }
 
+.admin-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  border-radius: var(--radius-12);
+  background: var(--tw-ring-color);
+  padding: 12px 14px;
+}
+
+.admin-info-banner-icon {
+  display: inline-flex;
+  height: 22px;
+  width: 22px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 119, 255, 0.18);
+  background: rgba(255, 255, 255, 0.88);
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.admin-info-banner-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(17, 24, 39, 0.66);
+}
+
 .admin-overline {
   font-size: 11px;
   font-weight: 700;
@@ -214,6 +247,19 @@ select:hover {
   min-height: var(--admin-control-height);
   padding: 0 var(--admin-control-padding-x);
   font-size: var(--admin-control-font-size);
+}
+
+.admin-date-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-date-range-separator {
+  color: rgba(17, 24, 39, 0.36);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .admin-caret {
