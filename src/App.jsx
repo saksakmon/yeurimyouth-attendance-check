@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { saveAttendanceRecord } from './api/attendanceRecords.js';
 import { getAppBootstrapData, getFallbackAppBootstrapData } from './api/bootstrap.js';
 import { formatAttendedTime } from './api/mappers.js';
-import { createMember, getMembers } from './api/members.js';
+import { createMember, getMembers, updateMember } from './api/members.js';
 import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
@@ -17,6 +17,15 @@ const APP_SCREENS = {
   preAttendanceConfirm: 'preAttendanceConfirm',
   attendanceKiosk: 'attendanceKiosk',
   adminDashboard: 'adminDashboard',
+};
+const ADMIN_SECTIONS = {
+  attendance: 'attendance',
+  members: 'members',
+};
+const MEMBER_DIRECTORY_FILTERS = {
+  active: 'active',
+  all: 'all',
+  inactive: 'inactive',
 };
 const RECENT_ABSENCE_WINDOW_SIZE = 3;
 const CHOSUNG_QUERY_PATTERN = /^[ㄱ-ㅎ]+$/;
@@ -69,6 +78,42 @@ function getAttendanceTypeLabel(attendanceType) {
   return ATTENDANCE_TYPE_LABELS[attendanceType] || '결석';
 }
 
+function formatMemberCreatedDate(value) {
+  if (!value) return '-';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value).slice(0, 10) || '-';
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}.${month}.${day}`;
+}
+
+function isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) {
+  if (!member?.createdAt || !latestWeekInWindow?.serviceDate) return true;
+
+  const registeredAt = new Date(member.createdAt);
+  if (Number.isNaN(registeredAt.getTime())) return true;
+
+  const eligibilityThreshold = new Date(`${latestWeekInWindow.serviceDate}T23:59:59`);
+  eligibilityThreshold.setDate(eligibilityThreshold.getDate() - RECENT_ABSENCE_WINDOW_SIZE * 7);
+  return registeredAt <= eligibilityThreshold;
+}
+
+function compareMemberDirectoryRows(a, b) {
+  if (a.isActive !== b.isActive) {
+    return a.isActive ? -1 : 1;
+  }
+
+  const displayNameCompare = String(a.displayName || '').localeCompare(String(b.displayName || ''), 'ko');
+  if (displayNameCompare !== 0) return displayNameCompare;
+
+  return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+}
+
 function findNewcomerGroup(groups) {
   return groups.find((group) => group.groupType === 'newcomer') || null;
 }
@@ -89,6 +134,21 @@ function buildAppMemberFromRow(row, groups) {
     groupName: group?.name || null,
     isActive: row.is_active !== false,
     updatedAt: row.updated_at || null,
+  };
+}
+
+function buildFallbackUpdatedMember(member, groups, updates) {
+  const nextGroupId = updates.groupId ?? member.groupId ?? null;
+  const group = nextGroupId ? groups.find((item) => item.id === nextGroupId) : null;
+
+  return {
+    ...member,
+    groupId: nextGroupId,
+    groupName: group?.name || null,
+    isActive: updates.isActive ?? member.isActive,
+    memberType: updates.memberType ?? member.memberType,
+    name: updates.name ?? member.name,
+    updatedAt: updates.updatedAt || new Date().toISOString(),
   };
 }
 
@@ -222,7 +282,10 @@ function getRecentAbsenceStreakCount(members, records, weekOptions, selectedWeek
 
   if (recentWeekKeys.length < RECENT_ABSENCE_WINDOW_SIZE) return 0;
 
+  const latestWeekInWindow = recentWeeks[0];
+
   return members.filter((member) =>
+    isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) &&
     recentWeekKeys.every((weekKey) => {
       const record = getAttendanceRecord(records, member.id, weekKey);
       return !isPresentAttendanceType(record?.attendanceType);
@@ -236,11 +299,13 @@ function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekK
 
   if (recentWeekKeys.length < RECENT_ABSENCE_WINDOW_SIZE) return [];
 
+  const latestWeekInWindow = recentWeeks[0];
   const oldestWeekInWindow = recentWeeks[recentWeeks.length - 1];
   const earlierWeeks = weekOptions.slice(startIndex + recentWeeks.length);
 
   return members
     .filter((member) =>
+      isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) &&
       recentWeekKeys.every((weekKey) => {
         const record = getAttendanceRecord(records, member.id, weekKey);
         return !isPresentAttendanceType(record?.attendanceType);
@@ -298,9 +363,17 @@ export default function App() {
 
   const [draftFilters, setDraftFilters] = useState(defaultAdminFilters);
   const [appliedFilters, setAppliedFilters] = useState(defaultAdminFilters);
+  const [adminSection, setAdminSection] = useState(ADMIN_SECTIONS.attendance);
   const [adminActiveWeekKey, setAdminActiveWeekKey] = useState(FALLBACK_BOOTSTRAP.currentWeekKey);
   const [adminSelectedRowIds, setAdminSelectedRowIds] = useState([]);
   const [adminPendingBulkActionType, setAdminPendingBulkActionType] = useState(null);
+  const [memberDirectoryFilter, setMemberDirectoryFilter] = useState(MEMBER_DIRECTORY_FILTERS.active);
+  const [editingMemberId, setEditingMemberId] = useState(null);
+  const [editMemberDraft, setEditMemberDraft] = useState({
+    name: '',
+    groupId: '',
+    memberType: 'registered',
+  });
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [addMemberDraft, setAddMemberDraft] = useState({
     name: '',
@@ -344,11 +417,12 @@ export default function App() {
   }, []);
 
   const resolvedMembers = useMemo(() => resolveMemberDisplayNames(members), [members]);
+  const activeMembers = useMemo(() => resolvedMembers.filter((member) => member.isActive), [resolvedMembers]);
   const membersById = useMemo(
     () => Object.fromEntries(resolvedMembers.map((member) => [member.id, member])),
     [resolvedMembers],
   );
-  const filtered = useMemo(() => filterMembers(resolvedMembers, query), [resolvedMembers, query]);
+  const filtered = useMemo(() => filterMembers(activeMembers, query), [activeMembers, query]);
   const currentAttendance = useMemo(
     () => buildAttendanceMap(attendanceRecords, appBootstrap.currentWeekKey),
     [attendanceRecords, appBootstrap.currentWeekKey],
@@ -391,13 +465,14 @@ export default function App() {
     appliedResolvedWeekKeys.length > 1 ? adminActiveWeekKey : appliedResolvedWeekKeys[0] || appBootstrap.currentWeekKey;
   const activeAdminWeekMeta =
     appBootstrap.attendanceWeeks.find((option) => option.weekKey === activeAdminWeekKey) || appBootstrap.currentAttendanceMeta;
+  const editingMember = editingMemberId ? membersById[editingMemberId] || null : null;
 
   const draftNameOptions = useMemo(
     () =>
-      resolvedMembers
+      activeMembers
         .filter((member) => draftFilters.groupId === 'all' || member.groupId === draftFilters.groupId)
         .map((member) => ({ value: member.id, label: member.displayName || member.name })),
-    [resolvedMembers, draftFilters.groupId],
+    [activeMembers, draftFilters.groupId],
   );
 
   useEffect(() => {
@@ -409,12 +484,12 @@ export default function App() {
 
   const filteredAdminMembers = useMemo(
     () =>
-      resolvedMembers.filter((member) => {
+      activeMembers.filter((member) => {
         const matchGroup = appliedFilters.groupId === 'all' || member.groupId === appliedFilters.groupId;
         const matchName = appliedFilters.nameIds.length === 0 || appliedFilters.nameIds.includes(member.id);
         return matchGroup && matchName;
       }),
-    [resolvedMembers, appliedFilters],
+    [activeMembers, appliedFilters],
   );
 
   const adminRows = useMemo(
@@ -454,6 +529,36 @@ export default function App() {
     appBootstrap.attendanceWeeks,
     activeAdminWeekKey,
   );
+  const memberDirectorySummary = useMemo(
+    () => ({
+      activeCount: activeMembers.length,
+      inactiveCount: resolvedMembers.filter((member) => !member.isActive).length,
+      totalCount: resolvedMembers.length,
+    }),
+    [activeMembers.length, resolvedMembers],
+  );
+  const memberDirectoryRows = useMemo(
+    () =>
+      resolvedMembers
+        .filter((member) => {
+          if (memberDirectoryFilter === MEMBER_DIRECTORY_FILTERS.all) return true;
+          if (memberDirectoryFilter === MEMBER_DIRECTORY_FILTERS.inactive) return !member.isActive;
+          return member.isActive;
+        })
+        .sort(compareMemberDirectoryRows)
+        .map((member) => ({
+          createdAt: member.createdAt,
+          createdAtLabel: formatMemberCreatedDate(member.createdAt),
+          displayName: member.displayName || member.name,
+          groupName: member.groupName || '-',
+          id: member.id,
+          isActive: member.isActive,
+          memberTypeLabel: getMemberTypeLabel(member.memberType),
+          rawName: member.name,
+          statusLabel: member.isActive ? '활성' : '비활성',
+        })),
+    [memberDirectoryFilter, resolvedMembers],
+  );
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -467,37 +572,32 @@ export default function App() {
     setAddMemberDraft({ name: '', groupId: '', memberType: 'visitor' });
   };
 
-  const syncMembersAfterWrite = async (newMember) => {
-    if (!hasSupabaseEnv) {
-      const nextMembers = [...members, newMember];
-      setMembers(nextMembers);
-      setAppBootstrap((prev) => ({
-        ...prev,
-        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
-      }));
-      return nextMembers;
+  const closeEditMemberModal = () => {
+    setEditingMemberId(null);
+    setEditMemberDraft({ name: '', groupId: '', memberType: 'registered' });
+  };
+
+  const applyMembersState = (nextMembers) => {
+    setMembers(nextMembers);
+    setAppBootstrap((prev) => ({
+      ...prev,
+      totalMemberCount: nextMembers.filter((member) => member.isActive).length,
+    }));
+    return nextMembers;
+  };
+
+  const syncMembersAfterWrite = async (buildFallbackMembers) => {
+    if (hasSupabaseEnv) {
+      try {
+        const latestMemberRows = await getMembers();
+        const nextMembers = latestMemberRows.map((row) => buildAppMemberFromRow(row, appBootstrap.groups));
+        return applyMembersState(nextMembers);
+      } catch (error) {
+        console.warn('[app] member refresh after save failed, falling back to local state', error);
+      }
     }
 
-    try {
-      const latestMemberRows = await getMembers();
-      const nextMembers = latestMemberRows.map((row) => buildAppMemberFromRow(row, appBootstrap.groups));
-
-      setMembers(nextMembers);
-      setAppBootstrap((prev) => ({
-        ...prev,
-        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
-      }));
-      return nextMembers;
-    } catch (error) {
-      console.warn('[app] member refresh after save failed, falling back to local state', error);
-      const nextMembers = [...members, newMember];
-      setMembers(nextMembers);
-      setAppBootstrap((prev) => ({
-        ...prev,
-        totalMemberCount: nextMembers.filter((member) => member.isActive).length,
-      }));
-      return nextMembers;
-    }
+    return applyMembersState(buildFallbackMembers());
   };
 
   const applyAttendanceRecordState = (nextRecord) => {
@@ -600,7 +700,7 @@ export default function App() {
         name: trimmedName,
       });
       const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
-      await syncMembersAfterWrite(appMember);
+      await syncMembersAfterWrite(() => [...members, appMember]);
 
       const syncedAttendanceRecord = await persistAttendanceTypeChange({
         memberId: savedMemberRow.id,
@@ -707,7 +807,7 @@ export default function App() {
       ...prev,
       groupId,
       nameIds: prev.nameIds.filter((memberId) =>
-        resolvedMembers.some((member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId)),
+        activeMembers.some((member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId)),
       ),
     }));
   };
@@ -839,7 +939,7 @@ export default function App() {
         name: trimmedName,
       });
       const appMember = buildAppMemberFromRow(savedMemberRow, appBootstrap.groups);
-      const syncedMembers = await syncMembersAfterWrite(appMember);
+      const syncedMembers = await syncMembersAfterWrite(() => [...members, appMember]);
       const createdMemberDisplayName =
         resolveMemberDisplayNames(syncedMembers).find((member) => member.id === savedMemberRow.id)?.displayName ||
         expectedDisplayName;
@@ -864,6 +964,109 @@ export default function App() {
     } catch (error) {
       console.error('[app] add member save failed', error);
       setToast('청년 추가 저장 중 오류가 발생했어요');
+    }
+  };
+
+  const handleEditMemberDraftChange = (field, value) => {
+    setEditMemberDraft((prev) => {
+      if (field === 'groupId' && !isNewcomerGroupId(appBootstrap.groups, value)) {
+        return { ...prev, groupId: value, memberType: 'registered' };
+      }
+
+      return { ...prev, [field]: value };
+    });
+  };
+
+  const handleOpenEditMember = (memberId) => {
+    const member = membersById[memberId];
+    if (!member) return;
+
+    setEditingMemberId(memberId);
+    setEditMemberDraft({
+      groupId: member.groupId || '',
+      memberType: member.memberType,
+      name: member.name,
+    });
+  };
+
+  const handleEditMemberSave = async () => {
+    if (!editingMemberId || !editingMember || !editMemberDraft.name.trim() || !editMemberDraft.groupId) return;
+
+    const trimmedName = editMemberDraft.name.trim();
+    const nextMemberType = isNewcomerGroupId(appBootstrap.groups, editMemberDraft.groupId)
+      ? editMemberDraft.memberType
+      : 'registered';
+
+    try {
+      const savedMemberRow = await updateMember(editingMemberId, {
+        group_id: editMemberDraft.groupId,
+        is_active: editingMember?.isActive !== false,
+        member_type: nextMemberType,
+        name: trimmedName,
+      });
+      const nextMember = hasSupabaseEnv
+        ? buildAppMemberFromRow(savedMemberRow, appBootstrap.groups)
+        : buildFallbackUpdatedMember(editingMember, appBootstrap.groups, {
+            groupId: editMemberDraft.groupId,
+            memberType: nextMemberType,
+            name: trimmedName,
+            updatedAt: savedMemberRow.updated_at,
+          });
+      const syncedMembers = await syncMembersAfterWrite(() =>
+        members.map((member) => (member.id === editingMemberId ? nextMember : member)),
+      );
+      const updatedDisplayName =
+        resolveMemberDisplayNames(syncedMembers).find((member) => member.id === editingMemberId)?.displayName || trimmedName;
+
+      closeEditMemberModal();
+      setToast(`${updatedDisplayName} 정보를 수정했어요`);
+    } catch (error) {
+      console.error('[app] edit member save failed', error);
+      setToast('회원 정보 저장 중 오류가 발생했어요');
+    }
+  };
+
+  const handleToggleMemberActive = async (memberId) => {
+    const member = membersById[memberId];
+    if (!member) return;
+
+    const nextIsActive = !member.isActive;
+    const confirmed = window.confirm(
+      nextIsActive
+        ? `${member.displayName || member.name} 청년을 다시 활성화할까요?`
+        : `${member.displayName || member.name} 청년을 비활성화할까요?\n비활성화하면 출결관리와 키오스크 검색에서 제외됩니다.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      const savedMemberRow = await updateMember(memberId, {
+        group_id: member.groupId,
+        is_active: nextIsActive,
+        member_type: member.memberType,
+        name: member.name,
+      });
+      const nextMember = hasSupabaseEnv
+        ? buildAppMemberFromRow(savedMemberRow, appBootstrap.groups)
+        : buildFallbackUpdatedMember(member, appBootstrap.groups, {
+            isActive: nextIsActive,
+            updatedAt: savedMemberRow.updated_at,
+          });
+      const syncedMembers = await syncMembersAfterWrite(() =>
+        members.map((item) => (item.id === memberId ? nextMember : item)),
+      );
+      const toggledDisplayName =
+        resolveMemberDisplayNames(syncedMembers).find((item) => item.id === memberId)?.displayName ||
+        member.displayName ||
+        member.name;
+
+      if (confirmTarget?.id === memberId) {
+        setConfirmTarget(null);
+      }
+
+      setToast(nextIsActive ? `${toggledDisplayName} 청년을 다시 활성화했어요` : `${toggledDisplayName} 청년을 비활성화했어요`);
+    } catch (error) {
+      console.error('[app] member active toggle failed', error);
+      setToast('회원 상태 변경 중 오류가 발생했어요');
     }
   };
 
@@ -895,6 +1098,12 @@ export default function App() {
 
   const adminGroupOptions = appBootstrap.groupFilterOptions;
   const addMemberGroupOptions = appBootstrap.addMemberGroupOptions;
+  const handleAdminSectionChange = (nextSection) => {
+    setAdminSection(nextSection);
+    setAdminPendingBulkActionType(null);
+    setShowAddMemberModal(false);
+    closeEditMemberModal();
+  };
 
   if (screen === APP_SCREENS.preAttendanceConfirm) {
     return (
@@ -909,6 +1118,7 @@ export default function App() {
   if (screen === APP_SCREENS.adminDashboard) {
     return (
       <AdminDashboardScreen
+        activeSection={adminSection}
         accentColor={ACCENT_COLOR}
         addMember={{
           canSave: Boolean(addMemberDraft.name.trim() && addMemberDraft.groupId),
@@ -945,9 +1155,30 @@ export default function App() {
           onReset: handleResetFilters,
           weekOptions: adminWeekOptions,
         }}
+        memberDirectory={{
+          editMember: {
+            canSave: Boolean(editMemberDraft.name.trim() && editMemberDraft.groupId),
+            draft: editMemberDraft,
+            groupOptions: addMemberGroupOptions,
+            isNewcomerGroupSelected: isNewcomerGroupId(appBootstrap.groups, editMemberDraft.groupId),
+            isOpen: Boolean(editingMemberId),
+            memberLabel: editingMember?.displayName || editingMember?.name || '',
+            onClose: closeEditMemberModal,
+            onDraftChange: handleEditMemberDraftChange,
+            onOpen: handleOpenEditMember,
+            onSave: handleEditMemberSave,
+          },
+          filter: memberDirectoryFilter,
+          onFilterChange: setMemberDirectoryFilter,
+          onToggleActive: handleToggleMemberActive,
+          rows: memberDirectoryRows,
+          summary: memberDirectorySummary,
+        }}
         navigation={{
+          activeSection: adminSection,
           onBackToKiosk: () => setScreen(APP_SCREENS.attendanceKiosk),
           onComingSoon: () => setToast('잘 써준다면 더 만들어볼게^^'),
+          onSectionChange: handleAdminSectionChange,
         }}
         summary={{
           attendanceCount: adminAttendanceCount,

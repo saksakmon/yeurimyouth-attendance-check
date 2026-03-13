@@ -488,6 +488,36 @@ select:hover {
   background: rgba(248, 250, 252, 0.8);
 }
 
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-24);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.admin-status-pill-active {
+  background: rgba(22, 119, 255, 0.1);
+  color: #1677ff;
+}
+
+.admin-status-pill-inactive {
+  background: rgba(17, 24, 39, 0.06);
+  color: rgba(17, 24, 39, 0.55);
+}
+
+.admin-inline-note {
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: var(--radius-12);
+  background: rgba(17, 24, 39, 0.025);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(17, 24, 39, 0.55);
+}
+
 .admin-overlay {
   position: fixed;
   inset: 0;

@@ -59,3 +59,49 @@ export async function createMember(payload) {
   });
   return data;
 }
+
+export async function updateMember(memberId, payload) {
+  if (!memberId) {
+    throw new Error('[members] update failed: member id is required');
+  }
+
+  if (!hasSupabaseEnv || !supabase) {
+    const mockRow = {
+      id: memberId,
+      updated_at: new Date().toISOString(),
+      ...payload,
+    };
+
+    logMemberWrite('using local mock update', mockRow);
+    return mockRow;
+  }
+
+  const nextPayload = {
+    ...payload,
+    updated_at: new Date().toISOString(),
+  };
+
+  logMemberWrite('updateMember update via supabase', {
+    id: memberId,
+    ...nextPayload,
+  });
+  const { data, error } = await supabase
+    .from('members')
+    .update(nextPayload)
+    .eq('id', memberId)
+    .select('id, name, member_type, group_id, is_active, created_at, updated_at')
+    .single();
+
+  if (error) {
+    console.error('[members] update failed', error);
+    throw new Error(`[members] update failed: ${error.message}`);
+  }
+
+  logMemberWrite('updateMember update success', {
+    groupId: data.group_id,
+    id: data.id,
+    isActive: data.is_active,
+    memberType: data.member_type,
+  });
+  return data;
+}
