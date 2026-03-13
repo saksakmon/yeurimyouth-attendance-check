@@ -445,7 +445,7 @@ function DateRangePickerField({ label, onApply, onClose, onOpen, open, valueFrom
       </button>
 
       {open && panelStyle ? (
-        <div className="admin-dropdown-panel admin-range-calendar-panel" style={panelStyle}>
+        <div className="admin-range-calendar-panel" style={panelStyle}>
           <div className="admin-range-calendar-header">
             <div>
               <div className="admin-range-calendar-title">등록일 범위 선택</div>

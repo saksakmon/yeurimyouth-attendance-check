@@ -338,6 +338,7 @@ select:hover {
   top: calc(100% + 10px);
   left: 0;
   z-index: 24;
+  border: 1px solid var(--admin-border-default);
   min-width: min(680px, calc(100vw - 48px));
   max-width: min(748px, calc(100vw - 48px));
   overflow: hidden;
@@ -347,6 +348,7 @@ select:hover {
   box-shadow:
     0 10px 22px rgba(15, 23, 42, 0.07),
     0 16px 28px rgba(15, 23, 42, 0.05);
+  animation: admin-popover-in 160ms ease;
 }
 
 .admin-range-calendar-header {
