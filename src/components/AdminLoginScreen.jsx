@@ -130,6 +130,17 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
               </>
             ) : (
               <>
+                {auth.sessionError ? (
+                  <div className="mt-6 rounded-[16px] border border-[#FDE7E7] bg-[#FFF7F7] px-4 py-4 text-sm text-[#B42318]">
+                    <div className="font-semibold">세션 확인에 실패했어요. 다시 로그인해 주세요.</div>
+                    {auth.authDiagnostic?.message ? (
+                      <div className="mt-1.5 text-[13px] leading-[1.6] text-[#7A271A]">
+                        {auth.authDiagnostic.message}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {auth.mode === 'local' ? (
                   <div className="mt-6 rounded-[16px] border border-[rgba(22,119,255,0.12)] bg-[rgba(22,119,255,0.06)] px-4 py-4 text-sm text-black/62">
                     <div className="font-semibold text-black/74">로컬 개발 모드</div>
@@ -168,6 +179,12 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
                     <div className="mt-3 rounded-[14px] border border-black/6 bg-white/84 px-3 py-3 text-[12px] leading-[1.65] text-black/60">
                       role 우선순위: `app_metadata.admin_role` → `VITE_ADMIN_ROLE_OVERRIDES` → 기타 metadata
                     </div>
+                    {auth.authDiagnostic?.stage ? (
+                      <div className="mt-3 rounded-[14px] border border-black/6 bg-white/84 px-3 py-3 text-[12px] leading-[1.65] text-black/60">
+                        진단: {auth.authDiagnostic.stage} · {auth.authDiagnostic.status}
+                        {auth.authDiagnostic.message ? ` · ${auth.authDiagnostic.message}` : ''}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
