@@ -334,16 +334,20 @@ select:hover {
 }
 
 .admin-range-calendar-panel {
-  position: fixed;
-  top: 0;
+  position: absolute;
+  top: calc(100% + 10px);
   left: 0;
-  z-index: 32;
-  width: min(760px, calc(100vw - 40px));
-  min-width: min(760px, calc(100vw - 40px));
-  max-width: calc(100vw - 40px);
-  max-height: min(560px, calc(100vh - 40px));
+  z-index: 24;
+  min-width: min(560px, calc(100vw - 48px));
+  max-width: min(660px, calc(100vw - 48px));
+  max-height: min(520px, calc(100vh - 120px));
   overflow: auto;
-  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.995);
+  padding: 16px;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.08),
+    0 18px 32px rgba(15, 23, 42, 0.06);
 }
 
 .admin-range-calendar-header {
@@ -434,6 +438,10 @@ select:hover {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.admin-member-directory-filter-card-range-open {
+  padding-bottom: 360px;
 }
 
 .admin-calendar-header {
@@ -1035,7 +1043,13 @@ select:hover {
   }
 
   .admin-range-calendar-panel {
-    max-height: calc(100vh - 32px);
+    min-width: min(100%, calc(100vw - 32px));
+    max-width: min(100%, calc(100vw - 32px));
+    max-height: calc(100vh - 96px);
     padding: 16px;
+  }
+
+  .admin-member-directory-filter-card-range-open {
+    padding-bottom: 520px;
   }
 }

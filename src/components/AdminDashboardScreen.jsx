@@ -339,24 +339,29 @@ function DateRangePickerField({ label, onApply, onClose, onOpen, open, valueFrom
       if (!rootRef.current) return;
 
       const rect = rootRef.current.getBoundingClientRect();
-      const panelWidth = Math.min(760, window.innerWidth - 40);
-      const left = Math.max(20, Math.min(rect.left, window.innerWidth - panelWidth - 20));
-      const top = Math.min(window.innerHeight - 520, rect.bottom + 10);
+      const viewportPadding = 24;
+      const maxWidth = Math.min(660, window.innerWidth - viewportPadding * 2);
+      const minWidth = Math.min(560, window.innerWidth - viewportPadding * 2);
+      let panelWidth = Math.min(maxWidth, Math.max(minWidth, rect.width + 220));
+      const availableRight = window.innerWidth - rect.left - viewportPadding;
+      const offsetLeft = Math.min(0, availableRight - panelWidth);
+      const maxNegativeOffset = -(rect.left - viewportPadding);
+
+      if (panelWidth < 320) {
+        panelWidth = Math.max(280, window.innerWidth - viewportPadding * 2);
+      }
 
       setPanelStyle({
-        left,
-        top: Math.max(12, top),
+        left: Math.max(maxNegativeOffset, offsetLeft),
         width: panelWidth,
       });
     };
 
     updatePanelPosition();
     window.addEventListener('resize', updatePanelPosition);
-    window.addEventListener('scroll', updatePanelPosition, true);
 
     return () => {
       window.removeEventListener('resize', updatePanelPosition);
-      window.removeEventListener('scroll', updatePanelPosition, true);
     };
   }, [open]);
 
@@ -590,6 +595,7 @@ function MemberStatusPill({ active }) {
 }
 
 function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, openField, setOpenField }) {
+  const isDateRangeOpen = openField === 'member-directory-date-range';
   const selectedStatusLabel =
     MEMBER_DIRECTORY_FILTER_OPTIONS.find((option) => option.value === memberDirectory.filters.draft.status)?.label || '전체';
   const selectedTypeLabel =
@@ -648,7 +654,11 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
         </div>
       </section>
 
-      <section className="admin-surface mt-4 p-4 lg:p-5">
+      <section
+        className={`admin-surface mt-4 p-4 lg:p-5 ${
+          isDateRangeOpen ? 'admin-member-directory-filter-card-range-open' : ''
+        }`}
+      >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <div className="admin-field-label">상태</div>
