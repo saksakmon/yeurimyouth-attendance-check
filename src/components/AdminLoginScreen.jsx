@@ -106,6 +106,11 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
                     {sessionLabel || '현재 로그인된 계정'}은 로그인에는 성공했지만, 관리자 화면에 접근할 수 있는 역할이 아직 연결되지 않았어요.
                   </div>
                   <div className="mt-3 text-[13px] text-[#7A271A]">현재 역할: {auth.roleLabel}</div>
+                  {auth.mode === 'supabase' ? (
+                    <div className="mt-2 text-[13px] leading-[1.6] text-[#7A271A]">
+                      우선 `app_metadata.admin_role`을 확인하고, 없으면 임시로 `VITE_ADMIN_ROLE_OVERRIDES`를 봐요.
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -158,7 +163,10 @@ export default function AdminLoginScreen({ accentColor, auth, onBackToKiosk }) {
                     <div className="mt-1.5 leading-[1.65]">
                       최초 관리자 계정은 Supabase Auth에서 이메일/비밀번호로 만든 뒤,
                       <br />
-                      `app_metadata.admin_role` 또는 `VITE_ADMIN_ROLE_OVERRIDES`로 역할을 연결해야 해요.
+                      `app_metadata.admin_role`을 우선으로 붙이고, 임시 부트스트랩이 필요할 때만 `VITE_ADMIN_ROLE_OVERRIDES`를 쓰면 돼요.
+                    </div>
+                    <div className="mt-3 rounded-[14px] border border-black/6 bg-white/84 px-3 py-3 text-[12px] leading-[1.65] text-black/60">
+                      role 우선순위: `app_metadata.admin_role` → `VITE_ADMIN_ROLE_OVERRIDES` → 기타 metadata
                     </div>
                   </div>
                 )}

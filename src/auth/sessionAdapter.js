@@ -51,6 +51,25 @@ function parseRoleOverrides(rawValue) {
 
 const ROLE_OVERRIDES = parseRoleOverrides(import.meta.env.VITE_ADMIN_ROLE_OVERRIDES);
 
+function mapSupabaseAuthError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  if (message.includes('invalid login credentials') || code === 'invalid_credentials') {
+    return '계정이 없거나 비밀번호가 맞지 않아요.';
+  }
+
+  if (message.includes('email not confirmed') || code === 'email_not_confirmed') {
+    return '이메일 인증이 완료되지 않았어요. Supabase Auth에서 이메일 인증 여부를 확인해 주세요.';
+  }
+
+  if (message.includes('user not found')) {
+    return 'Supabase Auth에 등록된 계정을 찾지 못했어요.';
+  }
+
+  return error?.message || '로그인 중 오류가 발생했어요.';
+}
+
 function getLocalAdminAccounts() {
   return DEFAULT_LOCAL_ADMIN_ACCOUNTS.map((account) => ({
     ...account,
@@ -77,8 +96,8 @@ export function resolveUserRole(user) {
     .toLowerCase();
 
   const candidates = [
-    ROLE_OVERRIDES[email],
     user?.app_metadata?.admin_role,
+    ROLE_OVERRIDES[email],
     user?.app_metadata?.role,
     user?.user_metadata?.admin_role,
     user?.user_metadata?.role,
@@ -264,7 +283,7 @@ function createSupabaseAdapter() {
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error(mapSupabaseAuthError(error));
       }
 
       return getCurrentSession();
