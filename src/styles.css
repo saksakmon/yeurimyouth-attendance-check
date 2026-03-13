@@ -288,25 +288,11 @@ select:hover {
 
 .admin-date-input {
   padding-right: 38px;
-  appearance: none;
-  -webkit-appearance: none;
+  letter-spacing: -0.01em;
 }
 
-.admin-date-input::-webkit-calendar-picker-indicator {
-  position: absolute;
-  inset: 0;
-  width: auto;
-  height: auto;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.admin-date-input::-webkit-datetime-edit {
-  color: rgba(17, 24, 39, 0.82);
-}
-
-.admin-date-input::-webkit-date-and-time-value {
-  text-align: left;
+.admin-date-input::placeholder {
+  color: rgba(17, 24, 39, 0.32);
 }
 
 .admin-caret {

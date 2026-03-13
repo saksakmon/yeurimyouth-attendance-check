@@ -135,13 +135,39 @@ function getMemberLifecycleLabel(member, groups) {
   return getMemberDirectoryTypeLabel(member, groups);
 }
 
+function normalizeMemberDirectoryDateValue(value) {
+  const digits = String(value || '')
+    .replace(/\D/g, '')
+    .slice(0, 8);
+
+  if (digits.length !== 8) return '';
+
+  const year = Number(digits.slice(0, 4));
+  const month = Number(digits.slice(4, 6));
+  const day = Number(digits.slice(6, 8));
+  const parsed = new Date(year, month - 1, day);
+
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() + 1 !== month ||
+    parsed.getDate() !== day
+  ) {
+    return '';
+  }
+
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
 function isMemberWithinCreatedDateRange(member, registeredFrom, registeredTo) {
-  if (!registeredFrom && !registeredTo) return true;
+  const normalizedFrom = normalizeMemberDirectoryDateValue(registeredFrom);
+  const normalizedTo = normalizeMemberDirectoryDateValue(registeredTo);
+  if (!normalizedFrom && !normalizedTo) return true;
 
   const createdDate = String(member?.createdAt || '').slice(0, 10);
   if (!createdDate) return false;
-  if (registeredFrom && createdDate < registeredFrom) return false;
-  if (registeredTo && createdDate > registeredTo) return false;
+  if (normalizedFrom && createdDate < normalizedFrom) return false;
+  if (normalizedTo && createdDate > normalizedTo) return false;
   return true;
 }
 
@@ -639,7 +665,7 @@ export default function App() {
           isActive: member.isActive,
           memberTypeLabel: getMemberDirectoryTypeLabel(member, appBootstrap.groups),
           rawName: member.name,
-          statusLabel: member.isActive ? '활성' : '비활성',
+          statusLabel: member.isActive ? '재적' : '재적 제외',
         })),
     [appliedMemberDirectoryFilters, appBootstrap.groups, resolvedMembers],
   );
@@ -1130,8 +1156,8 @@ export default function App() {
     const nextIsActive = !member.isActive;
     const confirmed = window.confirm(
       nextIsActive
-        ? `${member.displayName || member.name} 청년을 다시 활성화할까요?`
-        : `${member.displayName || member.name} 청년을 비활성화할까요?\n비활성화하면 출결관리와 키오스크 검색에서 제외됩니다.`,
+        ? `${member.displayName || member.name} 청년을 다시 복구할까요?`
+        : `${member.displayName || member.name} 청년을 재적에서 제외할까요?\n재적에서 제외하면 출결관리와 키오스크 검색에서 제외됩니다.`,
     );
     if (!confirmed) return;
 
@@ -1160,7 +1186,7 @@ export default function App() {
         setConfirmTarget(null);
       }
 
-      setToast(nextIsActive ? `${toggledDisplayName} 청년을 다시 활성화했어요` : `${toggledDisplayName} 청년을 비활성화했어요`);
+      setToast(nextIsActive ? `${toggledDisplayName} 청년을 다시 복구했어요` : `${toggledDisplayName} 청년을 재적에서 제외했어요`);
     } catch (error) {
       console.error('[app] member active toggle failed', error);
       setToast('회원 상태 변경 중 오류가 발생했어요');
