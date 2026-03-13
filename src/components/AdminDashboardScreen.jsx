@@ -315,9 +315,15 @@ function DatePickerField({ label, onChange, onClose, onOpen, open, placeholder, 
           className="admin-input admin-date-input w-full"
           placeholder={placeholder}
         />
-        <button type="button" className="admin-date-trigger" onClick={onOpen} aria-label={`${placeholder} 달력 열기`}>
+        <AdminButton
+          variant="tertiary"
+          icon
+          className="admin-date-trigger"
+          onClick={onOpen}
+          aria-label={`${placeholder} 달력 열기`}
+        >
           <span className="admin-date-trigger-icon" />
-        </button>
+        </AdminButton>
       </div>
 
       {open && (
@@ -507,8 +513,6 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
     { value: MEMBER_DIRECTORY_GROUP_ALL_VALUE, label: '전체' },
     ...memberDirectory.filters.groupOptions,
   ];
-  const selectedBulkGroupLabel =
-    memberDirectory.bulkAction.groupOptions.find((option) => option.value === memberDirectory.bulkAction.selectedGroupId)?.label || '';
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-5 py-5 lg:px-8 lg:py-6">
@@ -517,7 +521,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
           i
         </span>
         <p className="admin-info-banner-text">
-          재적에서 제외한 청년은 출결관리 표와 키오스크 검색 결과에서 제외되고, 인원관리에서 다시 복구할 수 있어요.
+          재적에서 제외한 청년은 처리 시점 이후 주차부터 출결관리와 키오스크에서 제외되고, 인원관리에서 다시 복구할 수 있어요.
         </p>
       </section>
 
@@ -601,6 +605,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
               options={memberDirectoryGroupFilterOptions}
               placeholder="전체"
               selectedValues={selectedGroupValues}
+              triggerClassName="admin-member-directory-group-trigger"
               wrapperRef={bindFieldRef('member-directory-group')}
             />
           </div>
@@ -651,43 +656,22 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
                 ? `${memberDirectory.bulkAction.selectedCount}명 선택됨`
                 : `총 ${memberDirectory.rows.length}명`}
             </div>
+            <AdminButton
+              variant="secondary"
+              disabled={!memberDirectory.bulkAction.canOpenGroupChange}
+              onClick={memberDirectory.bulkAction.onOpenGroupChange}
+            >
+              숲 변경
+            </AdminButton>
 
-            {memberDirectory.bulkAction.selectedCount > 0 && (
-              <>
-                <SingleSelectField
-                  className="min-w-[180px]"
-                  onOptionSelect={(value) => {
-                    memberDirectory.bulkAction.onBulkGroupChange(value);
-                    setOpenField(null);
-                  }}
-                  onToggleOpen={() =>
-                    setOpenField(openField === 'member-directory-bulk-group' ? null : 'member-directory-bulk-group')
-                  }
-                  open={openField === 'member-directory-bulk-group'}
-                  options={memberDirectory.bulkAction.groupOptions}
-                  placeholder="숲 변경"
-                  selectedLabel={selectedBulkGroupLabel}
-                  selectedValue={memberDirectory.bulkAction.selectedGroupId}
-                  wrapperRef={bindFieldRef('member-directory-bulk-group')}
-                />
-
-                <AdminButton
-                  variant="secondary"
-                  disabled={!memberDirectory.bulkAction.canApplyGroupChange}
-                  onClick={memberDirectory.bulkAction.onApplyGroupChange}
-                >
-                  숲 변경
-                </AdminButton>
-
-                <AdminButton
-                  variant="secondary"
-                  danger
-                  onClick={memberDirectory.bulkAction.onRequestDeactivateSelected}
-                >
-                  재적에서 제외
-                </AdminButton>
-              </>
-            )}
+            <AdminButton
+              variant="secondary"
+              danger
+              disabled={memberDirectory.bulkAction.selectedCount === 0}
+              onClick={memberDirectory.bulkAction.onRequestDeactivateSelected}
+            >
+              재적에서 제외
+            </AdminButton>
           </div>
         </div>
 
@@ -737,6 +721,9 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
                         <AdminButton variant="secondary" inline onClick={() => memberDirectory.editMember.onOpen(row.id)}>
                           수정
                         </AdminButton>
+                        <AdminButton variant="tertiary" inline onClick={() => memberDirectory.history.onOpen(row.id)}>
+                          이력
+                        </AdminButton>
                         <AdminButton
                           variant={row.isActive ? 'secondary' : 'tertiary'}
                           danger={row.isActive}
@@ -773,7 +760,7 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
   return (
     <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
       <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
-        <div className="text-[24px] font-semibold tracking-tight text-black">회원 정보 수정</div>
+        <div className="text-[20px] font-semibold tracking-tight text-black">회원 정보 수정</div>
         <div className="mt-2 text-sm text-black/45">이름, 유형, 소속 숲을 수정할 수 있어요.</div>
 
         {editMember.memberLabel ? (
@@ -782,7 +769,7 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
           </div>
         ) : null}
 
-        <div className="mt-7 space-y-4">
+        <div className="mt-6 space-y-4">
           <div>
             <label className="admin-field-label">이름</label>
             <input
@@ -831,7 +818,7 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
           )}
         </div>
 
-        <div className="mt-7 grid grid-cols-2 gap-3">
+        <div className="mt-6 grid grid-cols-2 gap-3">
           <button type="button" className="admin-button admin-button-secondary" onClick={editMember.onClose}>
             닫기
           </button>
@@ -854,15 +841,117 @@ function MemberDirectoryConfirmModal({ confirmation, isVisible }) {
   return (
     <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
       <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
-        <div className="text-[24px] font-semibold tracking-tight text-black">{confirmation.title}</div>
+        <div className="text-[20px] font-semibold tracking-tight text-black">{confirmation.title}</div>
         <div className="mt-3 text-[16px] leading-[1.6] text-black/60">{confirmation.description}</div>
 
-        <div className="mt-7 grid grid-cols-2 gap-3">
+        <div className="mt-6 grid grid-cols-2 gap-3">
           <AdminButton variant="secondary" onClick={confirmation.onCancel}>
             취소
           </AdminButton>
           <AdminButton variant="primary" danger onClick={confirmation.onConfirm}>
             {confirmation.confirmLabel}
+          </AdminButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemberDirectoryHistoryModal({ history, isVisible, onClose }) {
+  return (
+    <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
+      <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[20px] font-semibold tracking-tight text-black">변경 이력</div>
+            <div className="mt-1.5 text-sm text-black/45">
+              {history.memberLabel ? `${history.memberLabel} 청년의 수정 및 상태 변경 내역입니다.` : '회원 변경 내역입니다.'}
+            </div>
+          </div>
+          <AdminButton variant="tertiary" icon onClick={onClose} aria-label="변경 이력 모달 닫기">
+            ×
+          </AdminButton>
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-[12px] border border-black/6">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-black/[0.024] text-left">
+              <tr>
+                <th className="px-3 py-3 font-semibold text-black/45">수정일자</th>
+                <th className="px-3 py-3 font-semibold text-black/45">수정자</th>
+                <th className="px-3 py-3 font-semibold text-black/45">내용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.rows.length > 0 ? (
+                history.rows.map((row) => (
+                  <tr key={row.id} className="admin-table-row">
+                    <td className="px-3 py-3 align-top text-black/58">{row.changedAtLabel}</td>
+                    <td className="px-3 py-3 align-top text-black/58">{row.changedBy}</td>
+                    <td className="px-3 py-3 align-top text-black/72">
+                      <div className="admin-table-note max-w-none">{row.content}</div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="3" className="admin-empty-state">
+                    아직 저장된 변경 이력이 없어요.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-6">
+          <AdminButton variant="secondary" className="w-full" onClick={onClose}>
+            닫기
+          </AdminButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemberDirectoryBulkGroupModal({ bindFieldRef, bulkAction, isVisible, openField, setOpenField }) {
+  const selectedGroupLabel =
+    bulkAction.groupOptions.find((option) => option.value === bulkAction.selectedGroupId)?.label || '';
+
+  return (
+    <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
+      <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
+        <div className="text-[20px] font-semibold tracking-tight text-black">숲 변경</div>
+        <div className="mt-2 text-sm text-black/45">선택한 {bulkAction.selectedCount}명의 소속 숲을 변경할 수 있어요.</div>
+
+        <div className="mt-5">
+          <label className="admin-field-label">변경할 숲</label>
+          <SingleSelectField
+            className="mt-2"
+            onOptionSelect={(value) => {
+              bulkAction.onGroupChange(value);
+              setOpenField(null);
+            }}
+            onToggleOpen={() => setOpenField(openField === 'member-directory-bulk-group-modal' ? null : 'member-directory-bulk-group-modal')}
+            open={openField === 'member-directory-bulk-group-modal'}
+            options={bulkAction.groupOptions}
+            placeholder="선택해 주세요"
+            selectedLabel={selectedGroupLabel}
+            selectedValue={bulkAction.selectedGroupId}
+            wrapperRef={bindFieldRef('member-directory-bulk-group-modal')}
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <AdminButton variant="secondary" onClick={bulkAction.onCancel}>
+            취소
+          </AdminButton>
+          <AdminButton
+            variant="primary"
+            disabled={!bulkAction.selectedGroupId}
+            onClick={bulkAction.onConfirm}
+          >
+            변경하기
           </AdminButton>
         </div>
       </div>
@@ -889,8 +978,10 @@ export default function AdminDashboardScreen({
   const toastState = useToastPresence(toast);
   const bulkModal = usePresence(Boolean(bulkAction.pendingType));
   const addMemberModal = usePresence(addMember.isOpen);
+  const bulkGroupModal = usePresence(memberDirectory.bulkAction.modal.isOpen);
   const editMemberModal = usePresence(memberDirectory.editMember.isOpen);
   const memberDirectoryConfirmModal = usePresence(memberDirectory.confirmation.isOpen);
+  const memberDirectoryHistoryModal = usePresence(memberDirectory.history.isOpen);
   const threeWeekModal = usePresence(showThreeWeekModal);
 
   const bindFieldRef = (key) => (node) => {
@@ -929,14 +1020,14 @@ export default function AdminDashboardScreen({
   }, [memberDirectory.editMember.isOpen, openField]);
 
   useEffect(() => {
-    if (memberDirectory.bulkAction.selectedCount === 0 && openField === 'member-directory-bulk-group') {
-      setOpenField(null);
-    }
-  }, [memberDirectory.bulkAction.selectedCount, openField]);
-
-  useEffect(() => {
     setOpenField(null);
   }, [activeSection]);
+
+  useEffect(() => {
+    if (!memberDirectory.bulkAction.modal.isOpen && openField === 'member-directory-bulk-group-modal') {
+      setOpenField(null);
+    }
+  }, [memberDirectory.bulkAction.modal.isOpen, openField]);
 
   const selectedWeekChips = useMemo(() => {
     if (filters.draftWeekKeys.includes('ALL')) {
@@ -1257,12 +1348,12 @@ export default function AdminDashboardScreen({
       {bulkModal.shouldRender && (
         <div className={`admin-overlay ${bulkModal.isVisible ? 'admin-overlay-visible' : ''}`}>
           <div className={`admin-modal-panel ${bulkModal.isVisible ? 'admin-modal-panel-visible' : ''}`}>
-            <div className="text-[24px] font-semibold tracking-tight text-black">출결 일괄 설정</div>
+            <div className="text-[20px] font-semibold tracking-tight text-black">출결 일괄 설정</div>
             <div className="mt-3 text-[16px] leading-[1.6] text-black/60">
               선택한 {selectedCount}명의 출결을 <AttendanceTypeLabel type={bulkAction.pendingType} />로 변경할까요?
             </div>
 
-            <div className="mt-7 grid grid-cols-2 gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <button type="button" className="admin-button admin-button-secondary" onClick={bulkAction.onClose}>
                 취소
               </button>
@@ -1284,7 +1375,7 @@ export default function AdminDashboardScreen({
           <div className={`admin-modal-panel admin-modal-panel-wide ${threeWeekModal.isVisible ? 'admin-modal-panel-visible' : ''}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-[24px] font-semibold tracking-tight text-black">3주 이상 결석자 명단</div>
+                <div className="text-[20px] font-semibold tracking-tight text-black">3주 이상 결석자 명단</div>
                 <div className="mt-2 text-sm text-black/45">등록 후 3주가 지난 청년 중 최근 3주 연속 결석한 인원입니다</div>
               </div>
               <button
@@ -1336,10 +1427,10 @@ export default function AdminDashboardScreen({
       {addMemberModal.shouldRender && (
         <div className={`admin-overlay ${addMemberModal.isVisible ? 'admin-overlay-visible' : ''}`}>
           <div className={`admin-modal-panel ${addMemberModal.isVisible ? 'admin-modal-panel-visible' : ''}`}>
-            <div className="text-[24px] font-semibold tracking-tight text-black">청년 추가</div>
+            <div className="text-[20px] font-semibold tracking-tight text-black">청년 추가</div>
             <div className="mt-2 text-sm text-black/45">명단에 새 청년을 등록하고 이후 출결을 관리할 수 있어요.</div>
 
-            <div className="mt-7 space-y-4">
+            <div className="mt-6 space-y-4">
               <div>
                 <label className="admin-field-label">이름</label>
                 <input
@@ -1396,7 +1487,7 @@ export default function AdminDashboardScreen({
               )}
             </div>
 
-            <div className="mt-7 grid grid-cols-2 gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <button type="button" className="admin-button admin-button-secondary" onClick={addMember.onClose}>
                 닫기
               </button>
@@ -1425,10 +1516,28 @@ export default function AdminDashboardScreen({
         />
       )}
 
+      {bulkGroupModal.shouldRender && memberDirectory.bulkAction.modal.isOpen && (
+        <MemberDirectoryBulkGroupModal
+          bindFieldRef={bindFieldRef}
+          bulkAction={memberDirectory.bulkAction.modal}
+          isVisible={bulkGroupModal.isVisible}
+          openField={openField}
+          setOpenField={setOpenField}
+        />
+      )}
+
       {memberDirectoryConfirmModal.shouldRender && memberDirectory.confirmation.isOpen && (
         <MemberDirectoryConfirmModal
           confirmation={memberDirectory.confirmation}
           isVisible={memberDirectoryConfirmModal.isVisible}
+        />
+      )}
+
+      {memberDirectoryHistoryModal.shouldRender && memberDirectory.history.isOpen && (
+        <MemberDirectoryHistoryModal
+          history={memberDirectory.history}
+          isVisible={memberDirectoryHistoryModal.isVisible}
+          onClose={memberDirectory.history.onClose}
         />
       )}
 

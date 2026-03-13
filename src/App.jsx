@@ -37,6 +37,8 @@ const MEMBER_DIRECTORY_TYPE_FILTERS = {
 const RECENT_ABSENCE_WINDOW_SIZE = 3;
 const CHOSUNG_QUERY_PATTERN = /^[ㄱ-ㅎ]+$/;
 const CHOSUNG_LIST = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+const MEMBER_CHANGE_HISTORY_STORAGE_KEY = 'yeurim-member-change-history-v1';
+const MEMBER_CHANGE_ACTOR = '운영 관리자';
 const ATTENDANCE_TYPE_LABELS = {
   absent: '결석',
   youth: '청년부(4부)',
@@ -89,6 +91,124 @@ function formatMemberCreatedDate(value) {
   const month = String(parsed.getMonth() + 1).padStart(2, '0');
   const day = String(parsed.getDate()).padStart(2, '0');
   return `${year}.${month}.${day}`;
+}
+
+function formatHistoryDateTime(value) {
+  if (!value) return '-';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  return `${year}.${month}.${day} ${hours}:${minutes}`;
+}
+
+function loadMemberChangeHistory() {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.localStorage.getItem(MEMBER_CHANGE_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('[app] failed to load member change history', error);
+    return [];
+  }
+}
+
+function getMomentFromValue(value, endOfDay = false) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}+09:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isMemberActiveAtMoment(member, effectiveMoment, historyEntries) {
+  if (!member) return false;
+
+  const resolvedMoment = getMomentFromValue(effectiveMoment);
+  if (!resolvedMoment) return member.isActive !== false;
+
+  const createdAt = getMomentFromValue(member.createdAt);
+  if (createdAt && createdAt > resolvedMoment) return false;
+
+  const statusEvents = historyEntries
+    .filter((entry) => entry.memberId === member.id && entry.kind === 'status')
+    .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+
+  if (statusEvents.length === 0) {
+    return member.isActive !== false;
+  }
+
+  let active = true;
+  for (const event of statusEvents) {
+    const changedAt = getMomentFromValue(event.changedAt);
+    if (!changedAt || changedAt > resolvedMoment) continue;
+    active = event.nextIsActive !== false;
+  }
+
+  return active;
+}
+
+function isMemberActiveOnServiceDate(member, serviceDate, historyEntries) {
+  return isMemberActiveAtMoment(member, getMomentFromValue(serviceDate, true), historyEntries);
+}
+
+function buildMemberHistoryEntry({ actionLabel, changedAt, content, kind = 'edit', memberId, nextIsActive = null }) {
+  return {
+    id: createId('member-history'),
+    actionLabel,
+    changedAt: changedAt || new Date().toISOString(),
+    changedBy: MEMBER_CHANGE_ACTOR,
+    content,
+    kind,
+    memberId,
+    nextIsActive,
+  };
+}
+
+function buildMemberEditHistoryContent(member, nextValues, groups) {
+  const currentGroupName = groups.find((group) => group.id === member.groupId)?.name || member.groupName || '-';
+  const nextGroupName = groups.find((group) => group.id === nextValues.groupId)?.name || '-';
+  const currentTypeLabel = getMemberDirectoryTypeLabel(member, groups);
+  const nextTypeLabel = getMemberDirectoryTypeLabel(
+    {
+      ...member,
+      groupId: nextValues.groupId,
+      memberType: nextValues.memberType,
+    },
+    groups,
+  );
+  const changes = [];
+
+  if (member.name !== nextValues.name) {
+    changes.push(`이름 ${member.name} → ${nextValues.name}`);
+  }
+
+  if ((member.groupId || '') !== (nextValues.groupId || '')) {
+    changes.push(`숲 ${currentGroupName} → ${nextGroupName}`);
+  }
+
+  if (currentTypeLabel !== nextTypeLabel) {
+    changes.push(`유형 ${currentTypeLabel} → ${nextTypeLabel}`);
+  }
+
+  return changes.length > 0 ? changes.join(' / ') : '회원 정보 수정';
 }
 
 function isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) {
@@ -333,28 +453,28 @@ function getNameHighlightRange(member, query) {
   return null;
 }
 
-function getRecentAbsenceStreakCount(members, records, weekOptions, selectedWeekKey) {
+function getRecentAbsenceStreakCount(members, records, weekOptions, selectedWeekKey, isMemberActiveForWeek) {
   const { recentWeeks } = getRecentAttendanceWindow(weekOptions, selectedWeekKey);
-  const recentWeekKeys = recentWeeks.map((option) => option.weekKey);
 
-  if (recentWeekKeys.length < RECENT_ABSENCE_WINDOW_SIZE) return 0;
+  if (recentWeeks.length < RECENT_ABSENCE_WINDOW_SIZE) return 0;
 
   const latestWeekInWindow = recentWeeks[0];
 
   return members.filter((member) =>
     isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) &&
-    recentWeekKeys.every((weekKey) => {
-      const record = getAttendanceRecord(records, member.id, weekKey);
+    recentWeeks.every((week) => {
+      if (!isMemberActiveForWeek(member, week.serviceDate)) return false;
+
+      const record = getAttendanceRecord(records, member.id, week.weekKey);
       return !isPresentAttendanceType(record?.attendanceType);
     }),
   ).length;
 }
 
-function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekKey, groups) {
+function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekKey, groups, isMemberActiveForWeek) {
   const { startIndex, recentWeeks } = getRecentAttendanceWindow(weekOptions, selectedWeekKey);
-  const recentWeekKeys = recentWeeks.map((option) => option.weekKey);
 
-  if (recentWeekKeys.length < RECENT_ABSENCE_WINDOW_SIZE) return [];
+  if (recentWeeks.length < RECENT_ABSENCE_WINDOW_SIZE) return [];
 
   const latestWeekInWindow = recentWeeks[0];
   const oldestWeekInWindow = recentWeeks[recentWeeks.length - 1];
@@ -363,13 +483,17 @@ function getRecentAbsenceStreakRows(members, records, weekOptions, selectedWeekK
   return members
     .filter((member) =>
       isMemberEligibleForRecentAbsenceWindow(member, latestWeekInWindow) &&
-      recentWeekKeys.every((weekKey) => {
-        const record = getAttendanceRecord(records, member.id, weekKey);
+      recentWeeks.every((week) => {
+        if (!isMemberActiveForWeek(member, week.serviceDate)) return false;
+
+        const record = getAttendanceRecord(records, member.id, week.weekKey);
         return !isPresentAttendanceType(record?.attendanceType);
       }),
     )
     .map((member) => {
       const lastPresentWeek = earlierWeeks.find((week) => {
+        if (!isMemberActiveForWeek(member, week.serviceDate)) return false;
+
         const record = getAttendanceRecord(records, member.id, week.weekKey);
         return isPresentAttendanceType(record?.attendanceType);
       });
@@ -448,7 +572,10 @@ export default function App() {
   const [appliedMemberDirectoryFilters, setAppliedMemberDirectoryFilters] = useState(() => getDefaultMemberDirectoryFilters());
   const [memberDirectorySelectedRowIds, setMemberDirectorySelectedRowIds] = useState([]);
   const [memberDirectoryBulkGroupId, setMemberDirectoryBulkGroupId] = useState('');
+  const [memberDirectoryBulkGroupModalOpen, setMemberDirectoryBulkGroupModalOpen] = useState(false);
   const [memberDirectoryConfirmAction, setMemberDirectoryConfirmAction] = useState(null);
+  const [memberDirectoryHistoryMemberId, setMemberDirectoryHistoryMemberId] = useState(null);
+  const [memberChangeHistory, setMemberChangeHistory] = useState(() => loadMemberChangeHistory());
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editMemberDraft, setEditMemberDraft] = useState({
     name: '',
@@ -497,19 +624,36 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      window.localStorage.setItem(MEMBER_CHANGE_HISTORY_STORAGE_KEY, JSON.stringify(memberChangeHistory));
+    } catch (error) {
+      console.warn('[app] failed to persist member change history', error);
+    }
+  }, [memberChangeHistory]);
+
   const resolvedMembers = useMemo(() => resolveMemberDisplayNames(members), [members]);
   const activeMembers = useMemo(() => resolvedMembers.filter((member) => member.isActive), [resolvedMembers]);
   const membersById = useMemo(
     () => Object.fromEntries(resolvedMembers.map((member) => [member.id, member])),
     [resolvedMembers],
   );
-  const filtered = useMemo(() => filterMembers(activeMembers, query), [activeMembers, query]);
+  const currentActiveMembers = useMemo(
+    () => resolvedMembers.filter((member) => isMemberActiveAtMoment(member, new Date(), memberChangeHistory)),
+    [memberChangeHistory, resolvedMembers],
+  );
+  const filtered = useMemo(() => filterMembers(currentActiveMembers, query), [currentActiveMembers, query]);
   const currentAttendance = useMemo(
     () => buildAttendanceMap(attendanceRecords, appBootstrap.currentWeekKey),
     [attendanceRecords, appBootstrap.currentWeekKey],
   );
-  const attendanceCount = useMemo(() => Object.values(currentAttendance).filter(Boolean).length, [currentAttendance]);
-  const attendanceRate = appBootstrap.totalMemberCount > 0 ? Math.round((attendanceCount / appBootstrap.totalMemberCount) * 100) : 0;
+  const attendanceCount = useMemo(
+    () => currentActiveMembers.filter((member) => Boolean(currentAttendance[member.id])).length,
+    [currentActiveMembers, currentAttendance],
+  );
+  const attendanceRate = currentActiveMembers.length > 0 ? Math.round((attendanceCount / currentActiveMembers.length) * 100) : 0;
   const resultState = getResultState(query, filtered);
   const canRegisterNewMember = Boolean(newMemberName.trim());
   const isFilterDirty = !areFiltersEqual(draftFilters, appliedFilters);
@@ -551,13 +695,22 @@ export default function App() {
   const activeAdminWeekMeta =
     appBootstrap.attendanceWeeks.find((option) => option.weekKey === activeAdminWeekKey) || appBootstrap.currentAttendanceMeta;
   const editingMember = editingMemberId ? membersById[editingMemberId] || null : null;
+  const isMemberActiveForAdminWeek = React.useCallback(
+    (member, serviceDate) => isMemberActiveOnServiceDate(member, serviceDate, memberChangeHistory),
+    [memberChangeHistory],
+  );
+  const adminWeekActiveMembers = useMemo(
+    () =>
+      resolvedMembers.filter((member) => isMemberActiveForAdminWeek(member, activeAdminWeekMeta?.serviceDate || null)),
+    [activeAdminWeekMeta?.serviceDate, isMemberActiveForAdminWeek, resolvedMembers],
+  );
 
   const draftNameOptions = useMemo(
     () =>
-      activeMembers
+      adminWeekActiveMembers
         .filter((member) => draftFilters.groupId === 'all' || member.groupId === draftFilters.groupId)
         .map((member) => ({ value: member.id, label: member.displayName || member.name })),
-    [activeMembers, draftFilters.groupId],
+    [adminWeekActiveMembers, draftFilters.groupId],
   );
 
   useEffect(() => {
@@ -569,12 +722,12 @@ export default function App() {
 
   const filteredAdminMembers = useMemo(
     () =>
-      activeMembers.filter((member) => {
+      adminWeekActiveMembers.filter((member) => {
         const matchGroup = appliedFilters.groupId === 'all' || member.groupId === appliedFilters.groupId;
         const matchName = appliedFilters.nameIds.length === 0 || appliedFilters.nameIds.includes(member.id);
         return matchGroup && matchName;
       }),
-    [activeMembers, appliedFilters],
+    [adminWeekActiveMembers, appliedFilters],
   );
 
   const adminRows = useMemo(
@@ -612,14 +765,23 @@ export default function App() {
         appBootstrap.attendanceWeeks,
         activeAdminWeekKey,
         appBootstrap.groups,
+        isMemberActiveForAdminWeek,
       ),
-    [filteredAdminMembers, attendanceRecords, activeAdminWeekKey, appBootstrap.attendanceWeeks, appBootstrap.groups],
+    [
+      filteredAdminMembers,
+      attendanceRecords,
+      activeAdminWeekKey,
+      appBootstrap.attendanceWeeks,
+      appBootstrap.groups,
+      isMemberActiveForAdminWeek,
+    ],
   );
   const threeWeekAbsenceCount = getRecentAbsenceStreakCount(
     filteredAdminMembers,
     attendanceRecords,
     appBootstrap.attendanceWeeks,
     activeAdminWeekKey,
+    isMemberActiveForAdminWeek,
   );
   const memberDirectorySummary = useMemo(
     () => ({
@@ -695,8 +857,8 @@ export default function App() {
       confirmLabel: '재적에서 제외',
       description:
         targetMembers.length === 1
-          ? `${firstLabel} 청년은 출결관리와 키오스크 검색 결과에서 제외돼요.`
-          : `선택한 ${targetMembers.length}명은 출결관리와 키오스크 검색 결과에서 제외돼요.`,
+          ? `${firstLabel} 청년은 재적 제외 시점 이후 주차부터 출결관리와 키오스크에서 제외돼요.`
+          : `선택한 ${targetMembers.length}명은 재적 제외 시점 이후 주차부터 출결관리와 키오스크에서 제외돼요.`,
       memberIds: targetMembers.map((member) => member.id),
       title:
         targetMembers.length === 1
@@ -704,6 +866,20 @@ export default function App() {
           : `${targetMembers.length}명을 재적에서 제외할까요?`,
     };
   }, [memberDirectoryConfirmAction, membersById]);
+  const memberDirectoryHistoryRows = useMemo(
+    () =>
+      memberChangeHistory
+        .filter((entry) => entry.memberId === memberDirectoryHistoryMemberId)
+        .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime())
+        .map((entry) => ({
+          changedAtLabel: formatHistoryDateTime(entry.changedAt),
+          changedBy: entry.changedBy || MEMBER_CHANGE_ACTOR,
+          content: entry.content || entry.actionLabel || '-',
+          id: entry.id,
+        })),
+    [memberChangeHistory, memberDirectoryHistoryMemberId],
+  );
+  const memberDirectoryHistoryMember = memberDirectoryHistoryMemberId ? membersById[memberDirectoryHistoryMemberId] || null : null;
 
   useEffect(() => {
     const validGroupIds = new Set(memberDirectoryGroupOptions.map((option) => option.value));
@@ -729,6 +905,12 @@ export default function App() {
   }, [memberDirectorySelectedRowIds.length]);
 
   useEffect(() => {
+    if (memberDirectorySelectedRowIds.length === 0) {
+      setMemberDirectoryBulkGroupModalOpen(false);
+    }
+  }, [memberDirectorySelectedRowIds.length]);
+
+  useEffect(() => {
     if (!toast) return undefined;
 
     const timeoutId = setTimeout(() => setToast(''), 2200);
@@ -743,6 +925,11 @@ export default function App() {
   const closeEditMemberModal = () => {
     setEditingMemberId(null);
     setEditMemberDraft({ name: '', groupId: '', memberType: 'registered' });
+  };
+
+  const appendMemberHistoryEntries = (entries) => {
+    if (!entries?.length) return;
+    setMemberChangeHistory((prev) => [...entries, ...prev]);
   };
 
   const applyMembersState = (nextMembers) => {
@@ -975,7 +1162,9 @@ export default function App() {
       ...prev,
       groupId,
       nameIds: prev.nameIds.filter((memberId) =>
-        activeMembers.some((member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId)),
+        adminWeekActiveMembers.some(
+          (member) => member.id === memberId && (groupId === 'all' || member.groupId === groupId),
+        ),
       ),
     }));
   };
@@ -1111,6 +1300,14 @@ export default function App() {
       const createdMemberDisplayName =
         resolveMemberDisplayNames(syncedMembers).find((member) => member.id === savedMemberRow.id)?.displayName ||
         expectedDisplayName;
+      appendMemberHistoryEntries([
+        buildMemberHistoryEntry({
+          actionLabel: '회원 추가',
+          changedAt: savedMemberRow.updated_at || savedMemberRow.created_at || new Date().toISOString(),
+          content: `회원 추가 · ${createdMemberDisplayName}`,
+          memberId: savedMemberRow.id,
+        }),
+      ]);
 
       if (isNewcomerGroup) {
         setNewcomerIntakes((prev) => [
@@ -1164,6 +1361,15 @@ export default function App() {
     const nextMemberType = isNewcomerGroupId(appBootstrap.groups, editMemberDraft.groupId)
       ? editMemberDraft.memberType
       : 'registered';
+    const editDescription = buildMemberEditHistoryContent(
+      editingMember,
+      {
+        groupId: editMemberDraft.groupId,
+        memberType: nextMemberType,
+        name: trimmedName,
+      },
+      appBootstrap.groups,
+    );
 
     try {
       const savedMemberRow = await updateMember(editingMemberId, {
@@ -1185,6 +1391,14 @@ export default function App() {
       );
       const updatedDisplayName =
         resolveMemberDisplayNames(syncedMembers).find((member) => member.id === editingMemberId)?.displayName || trimmedName;
+      appendMemberHistoryEntries([
+        buildMemberHistoryEntry({
+          actionLabel: '회원 정보 수정',
+          changedAt: savedMemberRow.updated_at || new Date().toISOString(),
+          content: editDescription,
+          memberId: editingMemberId,
+        }),
+      ]);
 
       closeEditMemberModal();
       setToast(`${updatedDisplayName} 정보를 수정했어요`);
@@ -1224,6 +1438,16 @@ export default function App() {
         resolveMemberDisplayNames(syncedMembers).find((item) => item.id === memberId)?.displayName ||
         member.displayName ||
         member.name;
+      appendMemberHistoryEntries([
+        buildMemberHistoryEntry({
+          actionLabel: nextIsActive ? '재적 복구' : '재적 제외',
+          changedAt: savedMemberRow.updated_at || new Date().toISOString(),
+          content: nextIsActive ? '재적 복구' : '재적에서 제외',
+          kind: 'status',
+          memberId,
+          nextIsActive,
+        }),
+      ]);
 
       if (confirmTarget?.id === memberId) {
         setConfirmTarget(null);
@@ -1262,6 +1486,11 @@ export default function App() {
       memberIds: memberDirectorySelectedRowIds,
       type: 'deactivate',
     });
+  };
+
+  const handleOpenMemberDirectoryBulkGroupModal = () => {
+    if (memberDirectorySelectedRowIds.length === 0) return;
+    setMemberDirectoryBulkGroupModalOpen(true);
   };
 
   const handleConfirmMemberDirectoryDeactivate = async () => {
@@ -1308,6 +1537,18 @@ export default function App() {
         targetMembers[0]?.displayName ||
         targetMembers[0]?.name ||
         '선택한 청년';
+      appendMemberHistoryEntries(
+        updatedMembers.map(([memberId, nextMember]) =>
+          buildMemberHistoryEntry({
+            actionLabel: '재적 제외',
+            changedAt: nextMember.updatedAt || new Date().toISOString(),
+            content: '재적에서 제외',
+            kind: 'status',
+            memberId,
+            nextIsActive: false,
+          }),
+        ),
+      );
 
       if (confirmTarget?.id && memberDirectoryConfirmDetails.memberIds.includes(confirmTarget.id)) {
         setConfirmTarget(null);
@@ -1369,10 +1610,32 @@ export default function App() {
         }),
       );
       const updatedMembersById = Object.fromEntries(updatedMembers);
+      appendMemberHistoryEntries(
+        updatedMembers.map(([memberId, nextMember]) => {
+          const previousMember = targetMembers.find((member) => member.id === memberId);
+          const previousGroupName = previousMember?.groupName || '-';
+          const nextGroupName = nextMember.groupName || targetGroup.name;
+          const previousTypeLabel = previousMember ? getMemberDirectoryTypeLabel(previousMember, appBootstrap.groups) : '-';
+          const nextTypeLabel = getMemberDirectoryTypeLabel(nextMember, appBootstrap.groups);
+          const segments = [`숲 ${previousGroupName} → ${nextGroupName}`];
+
+          if (previousTypeLabel !== nextTypeLabel) {
+            segments.push(`유형 ${previousTypeLabel} → ${nextTypeLabel}`);
+          }
+
+          return buildMemberHistoryEntry({
+            actionLabel: '소속 숲 변경',
+            changedAt: nextMember.updatedAt || new Date().toISOString(),
+            content: segments.join(' / '),
+            memberId,
+          });
+        }),
+      );
 
       await syncMembersAfterWrite(() => members.map((member) => updatedMembersById[member.id] || member));
       setMemberDirectorySelectedRowIds([]);
       setMemberDirectoryBulkGroupId('');
+      setMemberDirectoryBulkGroupModalOpen(false);
       setToast(
         targetMembers.length === 1
           ? `${targetMembers[0].displayName || targetMembers[0].name} 청년의 소속 숲을 변경했어요`
@@ -1382,6 +1645,14 @@ export default function App() {
       console.error('[app] bulk member group update failed', error);
       setToast('소속 숲 변경 중 오류가 발생했어요');
     }
+  };
+
+  const handleOpenMemberDirectoryHistory = (memberId) => {
+    setMemberDirectoryHistoryMemberId(memberId);
+  };
+
+  const handleCloseMemberDirectoryHistory = () => {
+    setMemberDirectoryHistoryMemberId(null);
   };
 
   const renderName = (member) => {
@@ -1444,6 +1715,8 @@ export default function App() {
     setMemberDirectoryConfirmAction(null);
     setMemberDirectorySelectedRowIds([]);
     setMemberDirectoryBulkGroupId('');
+    setMemberDirectoryBulkGroupModalOpen(false);
+    setMemberDirectoryHistoryMemberId(null);
     setShowAddMemberModal(false);
     closeEditMemberModal();
   };
@@ -1501,10 +1774,11 @@ export default function App() {
         memberDirectory={{
           bulkAction: {
             allRowsSelected: memberDirectoryAllRowsSelected,
-            canApplyGroupChange: Boolean(memberDirectoryBulkGroupId && memberDirectorySelectedCount > 0),
+            canOpenGroupChange: memberDirectorySelectedCount > 0,
             groupOptions: memberDirectoryGroupOptions,
             onApplyGroupChange: handleMemberDirectoryBulkGroupApply,
             onBulkGroupChange: setMemberDirectoryBulkGroupId,
+            onOpenGroupChange: handleOpenMemberDirectoryBulkGroupModal,
             onRequestDeactivateSelected: handleRequestMemberDirectoryBulkDeactivate,
             onRowSelectToggle: handleMemberDirectoryRowSelectToggle,
             onSelectAllRows: handleMemberDirectorySelectAllRows,
@@ -1512,6 +1786,18 @@ export default function App() {
             selectedCount: memberDirectorySelectedCount,
             selectedGroupId: memberDirectoryBulkGroupId,
             selectedRowIds: memberDirectorySelectedRowIds,
+            modal: {
+              groupOptions: memberDirectoryGroupOptions,
+              isOpen: memberDirectoryBulkGroupModalOpen,
+              onCancel: () => {
+                setMemberDirectoryBulkGroupModalOpen(false);
+                setMemberDirectoryBulkGroupId('');
+              },
+              onConfirm: handleMemberDirectoryBulkGroupApply,
+              onGroupChange: setMemberDirectoryBulkGroupId,
+              selectedCount: memberDirectorySelectedCount,
+              selectedGroupId: memberDirectoryBulkGroupId,
+            },
           },
           confirmation: {
             confirmLabel: memberDirectoryConfirmDetails?.confirmLabel || '재적에서 제외',
@@ -1541,6 +1827,13 @@ export default function App() {
             onDraftChange: handleMemberDirectoryDraftChange,
             onDraftGroupToggle: handleMemberDirectoryDraftGroupToggle,
             onReset: handleResetMemberDirectoryFilters,
+          },
+          history: {
+            isOpen: Boolean(memberDirectoryHistoryMemberId),
+            memberLabel: memberDirectoryHistoryMember?.displayName || memberDirectoryHistoryMember?.name || '',
+            onClose: handleCloseMemberDirectoryHistory,
+            onOpen: handleOpenMemberDirectoryHistory,
+            rows: memberDirectoryHistoryRows,
           },
           onToggleActive: handleToggleMemberActive,
           rows: memberDirectoryRows,
