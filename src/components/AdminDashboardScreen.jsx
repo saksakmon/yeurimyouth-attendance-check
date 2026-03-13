@@ -756,7 +756,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
             </div>
             <AdminButton
               variant="secondary"
-              disabled={!memberDirectory.bulkAction.canOpenGroupChange}
+              disabled={!memberDirectory.permissions.canChangeGroup || !memberDirectory.bulkAction.canOpenGroupChange}
               onClick={memberDirectory.bulkAction.onOpenGroupChange}
             >
               숲 변경
@@ -765,7 +765,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
             <AdminButton
               variant="secondary"
               danger
-              disabled={memberDirectory.bulkAction.selectedCount === 0}
+              disabled={!memberDirectory.permissions.canToggleStatus || memberDirectory.bulkAction.selectedCount === 0}
               onClick={memberDirectory.bulkAction.onRequestDeactivateSelected}
             >
               재적에서 제외
@@ -815,22 +815,34 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
                     </td>
                     <td className="px-4 py-3 text-black/58">{row.createdAtLabel}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <AdminButton variant="secondary" inline onClick={() => memberDirectory.editMember.onOpen(row.id)}>
-                          수정
-                        </AdminButton>
-                        <AdminButton variant="secondary" inline onClick={() => memberDirectory.history.onOpen(row.id)}>
-                          이력
-                        </AdminButton>
-                        <AdminButton
-                          variant={row.isActive ? 'secondary' : 'tertiary'}
-                          danger={row.isActive}
-                          inline
-                          onClick={() => memberDirectory.onToggleActive(row.id)}
-                        >
-                          {row.isActive ? '재적에서 제외' : '복구'}
-                        </AdminButton>
-                      </div>
+                      {memberDirectory.permissions.canEdit ||
+                      memberDirectory.permissions.canViewAudit ||
+                      memberDirectory.permissions.canToggleStatus ? (
+                        <div className="flex flex-wrap gap-2">
+                          {memberDirectory.permissions.canEdit ? (
+                            <AdminButton variant="secondary" inline onClick={() => memberDirectory.editMember.onOpen(row.id)}>
+                              수정
+                            </AdminButton>
+                          ) : null}
+                          {memberDirectory.permissions.canViewAudit ? (
+                            <AdminButton variant="secondary" inline onClick={() => memberDirectory.history.onOpen(row.id)}>
+                              이력
+                            </AdminButton>
+                          ) : null}
+                          {memberDirectory.permissions.canToggleStatus ? (
+                            <AdminButton
+                              variant={row.isActive ? 'secondary' : 'tertiary'}
+                              danger={row.isActive}
+                              inline
+                              onClick={() => memberDirectory.onToggleActive(row.id)}
+                            >
+                              {row.isActive ? '재적에서 제외' : '복구'}
+                            </AdminButton>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-black/32">-</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -1062,6 +1074,7 @@ function MemberDirectoryBulkGroupModal({ accentColor, bindFieldRef, bulkAction, 
 export default function AdminDashboardScreen({
   activeSection,
   accentColor,
+  access,
   addMember,
   bulkAction,
   filters,
@@ -1174,25 +1187,52 @@ export default function AdminDashboardScreen({
                 <SidebarItem active={activeSection === 'attendance'} onClick={() => navigation.onSectionChange('attendance')}>
                   출결관리
                 </SidebarItem>
-                <SidebarItem active={activeSection === 'members'} onClick={() => navigation.onSectionChange('members')}>
-                  인원관리
-                </SidebarItem>
+                {navigation.canAccessMembers ? (
+                  <SidebarItem active={activeSection === 'members'} onClick={() => navigation.onSectionChange('members')}>
+                    인원관리
+                  </SidebarItem>
+                ) : null}
               </div>
             </div>
 
-            <div>
-              <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-black/30">행사관리</div>
-              <div className="mt-2 space-y-1">
-                <SidebarItem onClick={navigation.onComingSoon}>행사관리</SidebarItem>
-                <SidebarItem onClick={navigation.onComingSoon}>예산설정</SidebarItem>
+            {navigation.canAccessSettings ? (
+              <div>
+                <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-black/30">행사관리</div>
+                <div className="mt-2 space-y-1">
+                  <SidebarItem onClick={navigation.onComingSoon}>행사관리</SidebarItem>
+                  <SidebarItem onClick={navigation.onComingSoon}>예산설정</SidebarItem>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
 
           <div className="admin-sidebar-footer">
+            {navigation.currentUser ? (
+              <div className="admin-surface mb-3 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-black/30">
+                  {navigation.roleLabel}
+                </div>
+                <div className="mt-2 text-[14px] font-semibold text-black/82">
+                  {navigation.currentUser.name || navigation.currentUser.email}
+                </div>
+                {navigation.currentUser.email ? (
+                  <div className="mt-1 text-[12px] text-black/48">{navigation.currentUser.email}</div>
+                ) : null}
+              </div>
+            ) : null}
             <button type="button" className="admin-button admin-button-secondary w-full" onClick={navigation.onBackToKiosk}>
               키오스크 보기
             </button>
+            {navigation.currentUser ? (
+              <button
+                type="button"
+                className="admin-button admin-button-tertiary mt-2 w-full"
+                disabled={navigation.isSigningOut}
+                onClick={navigation.onSignOut}
+              >
+                {navigation.isSigningOut ? '로그아웃 중...' : '로그아웃'}
+              </button>
+            ) : null}
           </div>
         </aside>
 
@@ -1210,14 +1250,16 @@ export default function AdminDashboardScreen({
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="admin-button admin-button-primary admin-button-lg"
-                style={{ backgroundColor: accentColor }}
-                onClick={addMember.onOpen}
-              >
-                청년 추가
-              </button>
+              {access.canCreateMembers ? (
+                <button
+                  type="button"
+                  className="admin-button admin-button-primary admin-button-lg"
+                  style={{ backgroundColor: accentColor }}
+                  onClick={addMember.onOpen}
+                >
+                  청년 추가
+                </button>
+              ) : null}
             </div>
           </div>
 

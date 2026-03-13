@@ -3,7 +3,7 @@ import { ADMIN_SECTIONS, APP_SCREENS } from '../constants/app.js';
 export const ROLES = {
   superAdmin: 'super_admin',
   admin: 'admin',
-  attendanceLeader: 'attendance_leader',
+  leader: 'leader',
 };
 
 export const PERMISSIONS = {
@@ -16,10 +16,17 @@ export const PERMISSIONS = {
   memberStatusEdit: 'member.status.edit',
   memberGroupEdit: 'member.group.edit',
   auditView: 'audit.view',
+  settingsAccess: 'settings.access',
   kioskAccess: 'kiosk.access',
 };
 
 const SUPER_ADMIN_PERMISSIONS = Object.values(PERMISSIONS);
+
+export const ROLE_LABELS = {
+  [ROLES.superAdmin]: '총관리자',
+  [ROLES.admin]: '관리자',
+  [ROLES.leader]: '리더',
+};
 
 export const ROLE_PERMISSION_MAP = {
   [ROLES.superAdmin]: SUPER_ADMIN_PERMISSIONS,
@@ -35,39 +42,55 @@ export const ROLE_PERMISSION_MAP = {
     PERMISSIONS.auditView,
     PERMISSIONS.kioskAccess,
   ],
-  [ROLES.attendanceLeader]: [
+  [ROLES.leader]: [
     PERMISSIONS.adminAccess,
     PERMISSIONS.attendanceView,
     PERMISSIONS.attendanceEdit,
-    PERMISSIONS.memberView,
     PERMISSIONS.kioskAccess,
   ],
 };
 
-export const MOCK_SESSION = {
-  isAuthenticated: true,
-  user: {
-    email: 'admin@example.com',
-    id: 'admin-user-1',
-    name: '운영 관리자',
-    role: ROLES.superAdmin,
-  },
-};
+export const SERVER_PROTECTED_PERMISSIONS = [
+  PERMISSIONS.attendanceEdit,
+  PERMISSIONS.memberCreate,
+  PERMISSIONS.memberEdit,
+  PERMISSIONS.memberStatusEdit,
+  PERMISSIONS.memberGroupEdit,
+];
 
 const SECTION_PERMISSIONS = {
   [ADMIN_SECTIONS.attendance]: PERMISSIONS.attendanceView,
   [ADMIN_SECTIONS.members]: PERMISSIONS.memberView,
 };
 
+const PUBLIC_SCREENS = new Set([APP_SCREENS.attendanceKiosk, APP_SCREENS.preAttendanceConfirm]);
+
 const SCREEN_PERMISSIONS = {
+  [APP_SCREENS.adminLogin]: PERMISSIONS.adminAccess,
   [APP_SCREENS.adminDashboard]: PERMISSIONS.adminAccess,
-  [APP_SCREENS.attendanceKiosk]: PERMISSIONS.kioskAccess,
-  [APP_SCREENS.preAttendanceConfirm]: PERMISSIONS.kioskAccess,
 };
 
+export function normalizeRole(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (!normalized) return null;
+  if (normalized === ROLES.superAdmin || normalized === 'superadmin') return ROLES.superAdmin;
+  if (normalized === ROLES.admin) return ROLES.admin;
+  if (
+    normalized === ROLES.leader ||
+    normalized === 'attendance_leader' ||
+    normalized === 'attendanceleader' ||
+    normalized === 'leader'
+  ) {
+    return ROLES.leader;
+  }
+
+  return null;
+}
+
 export function resolveSessionPermissions(session) {
-  if (!session?.user?.role) return [];
-  return ROLE_PERMISSION_MAP[session.user.role] || [];
+  if (!session?.isAuthenticated || !session?.user?.role) return [];
+  return ROLE_PERMISSION_MAP[normalizeRole(session.user.role)] || [];
 }
 
 export function hasPermission(session, permission) {
@@ -76,13 +99,20 @@ export function hasPermission(session, permission) {
 }
 
 export function canAccessAdminSection(session, section) {
+  if (!session?.isAuthenticated) return false;
   return hasPermission(session, SECTION_PERMISSIONS[section]);
 }
 
 export function canAccessScreen(session, screen) {
+  if (PUBLIC_SCREENS.has(screen)) return true;
+  if (!session?.isAuthenticated) return false;
   return hasPermission(session, SCREEN_PERMISSIONS[screen]);
 }
 
+export function getRoleLabel(role) {
+  return ROLE_LABELS[normalizeRole(role)] || '권한 없음';
+}
+
 export function getAuditActorName(session) {
-  return session?.user?.name || '운영 관리자';
+  return session?.user?.name || session?.user?.email || '알 수 없는 관리자';
 }

@@ -8,8 +8,9 @@ export const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase = hasSupabaseEnv
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: false,
+        autoRefreshToken: true,
+        persistSession: true,
+        storageKey: 'yeurim-admin-auth',
       },
     })
   : null;
-

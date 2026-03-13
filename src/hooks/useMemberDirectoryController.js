@@ -670,6 +670,7 @@ export function useMemberDirectoryController({
       resetSectionState,
     },
     addMemberProps: {
+      canOpen: auth.can(PERMISSIONS.memberCreate),
       canSave: Boolean(addMemberDraft.name.trim() && addMemberDraft.groupId),
       draft: addMemberDraft,
       groupOptions: appBootstrap.addMemberGroupOptions,
@@ -752,6 +753,12 @@ export function useMemberDirectoryController({
         onClose: () => setMemberDirectoryHistoryMemberId(null),
         onOpen: handleOpenMemberDirectoryHistory,
         rows: memberDirectoryHistoryRows,
+      },
+      permissions: {
+        canChangeGroup: auth.can(PERMISSIONS.memberGroupEdit),
+        canEdit: auth.can(PERMISSIONS.memberEdit),
+        canToggleStatus: auth.can(PERMISSIONS.memberStatusEdit),
+        canViewAudit: auth.can(PERMISSIONS.auditView),
       },
       onToggleActive: handleToggleMemberActive,
       rows: memberDirectoryRows,

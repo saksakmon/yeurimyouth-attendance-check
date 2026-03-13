@@ -1,8 +1,10 @@
 import * as React from 'react';
 import AdminDashboardScreen from './components/AdminDashboardScreen.jsx';
+import AdminLoginScreen from './components/AdminLoginScreen.jsx';
 import AttendanceKioskScreen from './components/AttendanceKioskScreen.jsx';
 import PreAttendanceConfirmScreen from './components/PreAttendanceConfirmScreen.jsx';
 import { ADMIN_SECTIONS, APP_SCREENS, ACCENT_COLOR } from './constants/app.js';
+import { PERMISSIONS } from './auth/permissions.js';
 import { getNameHighlightRange } from './domain/kiosk/search.js';
 import { findNewcomerGroup } from './domain/members/memberHelpers.js';
 import { useAdminAttendanceController } from './hooks/useAdminAttendanceController.js';
@@ -25,6 +27,15 @@ export default function App() {
     members: appState.members,
   });
   const newcomerGroup = useMemo(() => findNewcomerGroup(appState.appBootstrap.groups), [appState.appBootstrap.groups]);
+  const adminAccess = useMemo(
+    () => ({
+      canAccessMembers: auth.canAccessAdminSection(ADMIN_SECTIONS.members),
+      canAccessSettings: auth.can(PERMISSIONS.settingsAccess),
+      canCreateMembers: auth.can(PERMISSIONS.memberCreate),
+      canViewAudit: auth.can(PERMISSIONS.auditView),
+    }),
+    [auth],
+  );
 
   const kiosk = useKioskController({
     appBootstrap: appState.appBootstrap,
@@ -67,8 +78,14 @@ export default function App() {
   });
 
   const handleOpenAdmin = () => {
+    if (!auth.isAuthenticated) {
+      setScreen(APP_SCREENS.adminLogin);
+      return;
+    }
+
     if (!auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
-      appActions.setToast('관리자 화면에 접근할 권한이 없어요');
+      appActions.setToast('관리자 권한이 없는 계정이에요');
+      setScreen(APP_SCREENS.adminLogin);
       return;
     }
 
@@ -94,6 +111,39 @@ export default function App() {
     adminAttendance.actions.resetSectionState();
     memberDirectory.actions.resetSectionState();
   };
+
+  const handleAdminSignOut = async () => {
+    try {
+      await auth.signOut();
+      setAdminSection(ADMIN_SECTIONS.attendance);
+      setScreen(APP_SCREENS.attendanceKiosk);
+      adminAttendance.actions.resetSectionState();
+      memberDirectory.actions.resetSectionState();
+      appActions.setToast('로그아웃했어요');
+    } catch (error) {
+      console.error('[auth] sign out failed', error);
+      appActions.setToast('로그아웃 중 오류가 발생했어요');
+    }
+  };
+
+  React.useEffect(() => {
+    if (screen === APP_SCREENS.adminDashboard && !auth.canAccessScreen(APP_SCREENS.adminDashboard)) {
+      setScreen(APP_SCREENS.adminLogin);
+    }
+  }, [auth, screen]);
+
+  React.useEffect(() => {
+    if (screen !== APP_SCREENS.adminLogin) return;
+    if (!auth.isAuthenticated) return;
+    if (!auth.canAccessScreen(APP_SCREENS.adminDashboard)) return;
+
+    setScreen(APP_SCREENS.adminDashboard);
+  }, [auth, screen]);
+
+  React.useEffect(() => {
+    if (auth.canAccessAdminSection(adminSection)) return;
+    setAdminSection(ADMIN_SECTIONS.attendance);
+  }, [adminSection, auth]);
 
   const renderName = (member) => {
     const highlightRange = getNameHighlightRange(member, kiosk.state.query);
@@ -131,15 +181,22 @@ export default function App() {
       <AdminDashboardScreen
         activeSection={adminSection}
         accentColor={ACCENT_COLOR}
+        access={adminAccess}
         addMember={memberDirectory.addMemberProps}
         bulkAction={adminAttendance.tableSelection.bulkAction}
         filters={adminAttendance.filtersProps}
         memberDirectory={memberDirectory.memberDirectoryProps}
         navigation={{
           activeSection: adminSection,
+          canAccessMembers: adminAccess.canAccessMembers,
+          canAccessSettings: adminAccess.canAccessSettings,
+          currentUser: auth.currentUser,
+          isSigningOut: auth.isSigningOut,
           onBackToKiosk: handleBackToKiosk,
           onComingSoon: () => appActions.setToast('잘 써준다면 더 만들어볼게^^'),
           onSectionChange: handleAdminSectionChange,
+          onSignOut: handleAdminSignOut,
+          roleLabel: auth.roleLabel,
         }}
         summary={adminAttendance.adminSummary}
         table={adminAttendance.tableProps}
@@ -147,6 +204,10 @@ export default function App() {
         toast={appState.toast}
       />
     );
+  }
+
+  if (screen === APP_SCREENS.adminLogin) {
+    return <AdminLoginScreen accentColor={ACCENT_COLOR} auth={auth} onBackToKiosk={handleBackToKiosk} />;
   }
 
   return (

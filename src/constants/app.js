@@ -3,6 +3,7 @@ export const ACCENT_COLOR = '#1677FF';
 export const APP_SCREENS = {
   preAttendanceConfirm: 'preAttendanceConfirm',
   attendanceKiosk: 'attendanceKiosk',
+  adminLogin: 'adminLogin',
   adminDashboard: 'adminDashboard',
 };
 
