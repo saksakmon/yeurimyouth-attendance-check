@@ -255,35 +255,161 @@ select:hover {
   gap: 10px;
 }
 
-.admin-date-range-separator {
-  color: rgba(17, 24, 39, 0.36);
-  font-size: 13px;
-  font-weight: 600;
+.admin-date-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
 }
 
-.admin-date-field-meta {
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(17, 24, 39, 0.36);
+.admin-date-field .admin-date-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-inline: 14px 0;
 }
 
-.admin-date-input-wrap {
-  position: relative;
+.admin-date-field .admin-date-input:focus {
+  border: 0;
+  box-shadow: none;
+  outline: none;
 }
 
-.admin-date-input-wrap::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: 12px;
+.admin-date-trigger {
+  display: inline-flex;
+  height: 32px;
+  width: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-8);
+  background: rgba(17, 24, 39, 0.04);
+  color: rgba(17, 24, 39, 0.6);
+}
+
+.admin-date-trigger:hover {
+  background: rgba(17, 24, 39, 0.08);
+  color: rgba(17, 24, 39, 0.8);
+}
+
+.admin-date-trigger-icon {
   width: 16px;
   height: 16px;
-  transform: translateY(-50%);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cg fill='none' stroke='%23111827' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.2' opacity='.52'%3E%3Crect x='2.2' y='3.4' width='11.6' height='10.2' rx='2'/%3E%3Cpath d='M5 2.4v2.1M11 2.4v2.1M2.4 6.1h11.2'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cg fill='none' stroke='%23111827' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.2' opacity='.64'%3E%3Crect x='2.2' y='3.4' width='11.6' height='10.2' rx='2'/%3E%3Cpath d='M5 2.4v2.1M11 2.4v2.1M2.4 6.1h11.2'/%3E%3C/g%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
-  pointer-events: none;
+}
+
+.admin-calendar-panel {
+  width: 296px;
+  min-width: 296px;
+  padding: 10px;
+}
+
+.admin-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.admin-calendar-month {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(17, 24, 39, 0.82);
+}
+
+.admin-calendar-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.04);
+  color: rgba(17, 24, 39, 0.62);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.admin-calendar-nav:hover {
+  background: rgba(17, 24, 39, 0.08);
+  color: rgba(17, 24, 39, 0.84);
+}
+
+.admin-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-bottom: 6px;
+}
+
+.admin-calendar-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(17, 24, 39, 0.34);
+}
+
+.admin-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.admin-calendar-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  font-size: 13px;
+  color: rgba(17, 24, 39, 0.72);
+}
+
+.admin-calendar-day:hover {
+  background: rgba(17, 24, 39, 0.04);
+  color: rgba(17, 24, 39, 0.88);
+}
+
+.admin-calendar-day-muted {
+  color: rgba(17, 24, 39, 0.24);
+}
+
+.admin-calendar-day-selected {
+  background: rgba(22, 119, 255, 0.12);
+  color: #1677ff;
+  font-weight: 700;
+}
+
+.admin-calendar-day-today {
+  box-shadow: inset 0 0 0 1px rgba(22, 119, 255, 0.2);
+}
+
+.admin-calendar-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.admin-calendar-footer-button {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(17, 24, 39, 0.48);
+}
+
+.admin-calendar-footer-button:hover {
+  color: rgba(17, 24, 39, 0.82);
+}
+
+.admin-calendar-footer-button-strong {
+  color: #1677ff;
 }
 
 .admin-date-input {
@@ -502,6 +628,42 @@ select:hover {
   color: rgba(17, 24, 39, 0.9);
 }
 
+.admin-button-primary.admin-button-danger {
+  border-color: #dc2626;
+  background: #dc2626;
+}
+
+.admin-button-primary.admin-button-danger:hover:not(:disabled) {
+  background: #c81e1e;
+  filter: none;
+}
+
+.admin-button-primary.admin-button-danger:active:not(:disabled) {
+  background: #b91c1c;
+  filter: none;
+}
+
+.admin-button-secondary.admin-button-danger {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.94);
+  color: #dc2626;
+}
+
+.admin-button-secondary.admin-button-danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.34);
+  background: rgba(254, 226, 226, 0.94);
+  color: #c81e1e;
+}
+
+.admin-button-tertiary.admin-button-danger {
+  color: #dc2626;
+}
+
+.admin-button-tertiary.admin-button-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+  color: #c81e1e;
+}
+
 .admin-tab {
   min-height: 36px;
   background: rgba(255, 255, 255, 0.9);
@@ -544,6 +706,11 @@ select:hover {
 .admin-checkbox:indeterminate {
   border-color: #1677ff;
   background-color: #1677ff;
+}
+
+.admin-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .admin-checkbox:checked {

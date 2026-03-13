@@ -446,6 +446,9 @@ export default function App() {
   const [adminPendingBulkActionType, setAdminPendingBulkActionType] = useState(null);
   const [draftMemberDirectoryFilters, setDraftMemberDirectoryFilters] = useState(() => getDefaultMemberDirectoryFilters());
   const [appliedMemberDirectoryFilters, setAppliedMemberDirectoryFilters] = useState(() => getDefaultMemberDirectoryFilters());
+  const [memberDirectorySelectedRowIds, setMemberDirectorySelectedRowIds] = useState([]);
+  const [memberDirectoryBulkGroupId, setMemberDirectoryBulkGroupId] = useState('');
+  const [memberDirectoryConfirmAction, setMemberDirectoryConfirmAction] = useState(null);
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editMemberDraft, setEditMemberDraft] = useState({
     name: '',
@@ -669,6 +672,38 @@ export default function App() {
         })),
     [appliedMemberDirectoryFilters, appBootstrap.groups, resolvedMembers],
   );
+  const memberDirectorySelectableRowIds = useMemo(
+    () => memberDirectoryRows.filter((row) => row.isActive).map((row) => row.id),
+    [memberDirectoryRows],
+  );
+  const memberDirectorySelectedCount = memberDirectorySelectedRowIds.length;
+  const memberDirectoryAllRowsSelected =
+    memberDirectorySelectableRowIds.length > 0 &&
+    memberDirectorySelectableRowIds.every((rowId) => memberDirectorySelectedRowIds.includes(rowId));
+  const memberDirectoryPartiallySelected = memberDirectorySelectedCount > 0 && !memberDirectoryAllRowsSelected;
+  const memberDirectoryConfirmDetails = useMemo(() => {
+    if (!memberDirectoryConfirmAction?.memberIds?.length) return null;
+
+    const targetMembers = memberDirectoryConfirmAction.memberIds
+      .map((memberId) => membersById[memberId])
+      .filter((member) => member?.isActive);
+
+    if (targetMembers.length === 0) return null;
+
+    const firstLabel = targetMembers[0]?.displayName || targetMembers[0]?.name || '선택한 청년';
+    return {
+      confirmLabel: '재적에서 제외',
+      description:
+        targetMembers.length === 1
+          ? `${firstLabel} 청년은 출결관리와 키오스크 검색 결과에서 제외돼요.`
+          : `선택한 ${targetMembers.length}명은 출결관리와 키오스크 검색 결과에서 제외돼요.`,
+      memberIds: targetMembers.map((member) => member.id),
+      title:
+        targetMembers.length === 1
+          ? `${firstLabel} 청년을 재적에서 제외할까요?`
+          : `${targetMembers.length}명을 재적에서 제외할까요?`,
+    };
+  }, [memberDirectoryConfirmAction, membersById]);
 
   useEffect(() => {
     const validGroupIds = new Set(memberDirectoryGroupOptions.map((option) => option.value));
@@ -682,6 +717,16 @@ export default function App() {
       groupIds: prev.groupIds.filter((groupId) => validGroupIds.has(groupId)),
     }));
   }, [memberDirectoryGroupOptions]);
+
+  useEffect(() => {
+    setMemberDirectorySelectedRowIds((prev) => prev.filter((rowId) => memberDirectorySelectableRowIds.includes(rowId)));
+  }, [memberDirectorySelectableRowIds]);
+
+  useEffect(() => {
+    if (memberDirectorySelectedRowIds.length === 0) {
+      setMemberDirectoryBulkGroupId('');
+    }
+  }, [memberDirectorySelectedRowIds.length]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1154,12 +1199,10 @@ export default function App() {
     if (!member) return;
 
     const nextIsActive = !member.isActive;
-    const confirmed = window.confirm(
-      nextIsActive
-        ? `${member.displayName || member.name} 청년을 다시 복구할까요?`
-        : `${member.displayName || member.name} 청년을 재적에서 제외할까요?\n재적에서 제외하면 출결관리와 키오스크 검색에서 제외됩니다.`,
-    );
-    if (!confirmed) return;
+    if (!nextIsActive) {
+      setMemberDirectoryConfirmAction({ memberIds: [memberId], type: 'deactivate' });
+      return;
+    }
 
     try {
       const savedMemberRow = await updateMember(memberId, {
@@ -1190,6 +1233,154 @@ export default function App() {
     } catch (error) {
       console.error('[app] member active toggle failed', error);
       setToast('회원 상태 변경 중 오류가 발생했어요');
+    }
+  };
+
+  const handleMemberDirectoryRowSelectToggle = (memberId) => {
+    if (!memberDirectorySelectableRowIds.includes(memberId)) return;
+
+    setMemberDirectorySelectedRowIds((prev) =>
+      prev.includes(memberId) ? prev.filter((item) => item !== memberId) : [...prev, memberId],
+    );
+  };
+
+  const handleMemberDirectorySelectAllRows = () => {
+    if (memberDirectorySelectableRowIds.length === 0) return;
+
+    setMemberDirectorySelectedRowIds((prev) => {
+      if (memberDirectoryAllRowsSelected) {
+        return prev.filter((rowId) => !memberDirectorySelectableRowIds.includes(rowId));
+      }
+
+      return Array.from(new Set([...prev, ...memberDirectorySelectableRowIds]));
+    });
+  };
+
+  const handleRequestMemberDirectoryBulkDeactivate = () => {
+    if (memberDirectorySelectedRowIds.length === 0) return;
+    setMemberDirectoryConfirmAction({
+      memberIds: memberDirectorySelectedRowIds,
+      type: 'deactivate',
+    });
+  };
+
+  const handleConfirmMemberDirectoryDeactivate = async () => {
+    if (!memberDirectoryConfirmDetails?.memberIds?.length) {
+      setMemberDirectoryConfirmAction(null);
+      return;
+    }
+
+    const targetMembers = memberDirectoryConfirmDetails.memberIds
+      .map((memberId) => membersById[memberId])
+      .filter((member) => member?.isActive);
+    if (targetMembers.length === 0) {
+      setMemberDirectoryConfirmAction(null);
+      return;
+    }
+
+    try {
+      const updatedMembers = await Promise.all(
+        targetMembers.map(async (member) => {
+          const savedMemberRow = await updateMember(member.id, {
+            group_id: member.groupId,
+            is_active: false,
+            member_type: member.memberType,
+            name: member.name,
+          });
+
+          const nextMember = hasSupabaseEnv
+            ? buildAppMemberFromRow(savedMemberRow, appBootstrap.groups)
+            : buildFallbackUpdatedMember(member, appBootstrap.groups, {
+                isActive: false,
+                updatedAt: savedMemberRow.updated_at,
+              });
+
+          return [member.id, nextMember];
+        }),
+      );
+      const updatedMembersById = Object.fromEntries(updatedMembers);
+
+      const syncedMembers = await syncMembersAfterWrite(() =>
+        members.map((member) => updatedMembersById[member.id] || member),
+      );
+      const firstLabel =
+        resolveMemberDisplayNames(syncedMembers).find((member) => member.id === targetMembers[0]?.id)?.displayName ||
+        targetMembers[0]?.displayName ||
+        targetMembers[0]?.name ||
+        '선택한 청년';
+
+      if (confirmTarget?.id && memberDirectoryConfirmDetails.memberIds.includes(confirmTarget.id)) {
+        setConfirmTarget(null);
+      }
+
+      setMemberDirectorySelectedRowIds((prev) =>
+        prev.filter((rowId) => !memberDirectoryConfirmDetails.memberIds.includes(rowId)),
+      );
+      setMemberDirectoryConfirmAction(null);
+      setToast(
+        targetMembers.length === 1
+          ? `${firstLabel} 청년을 재적에서 제외했어요`
+          : `${targetMembers.length}명의 청년을 재적에서 제외했어요`,
+      );
+    } catch (error) {
+      console.error('[app] bulk member deactivate failed', error);
+      setToast('재적 제외 처리 중 오류가 발생했어요');
+    }
+  };
+
+  const handleMemberDirectoryBulkGroupApply = async () => {
+    if (!memberDirectoryBulkGroupId || memberDirectorySelectedRowIds.length === 0) return;
+
+    const targetGroup = appBootstrap.groups.find((group) => group.id === memberDirectoryBulkGroupId);
+    if (!targetGroup) {
+      setToast('소속 숲 정보를 찾지 못했어요');
+      return;
+    }
+
+    const targetMembers = memberDirectorySelectedRowIds
+      .map((memberId) => membersById[memberId])
+      .filter((member) => member?.isActive);
+    if (targetMembers.length === 0) return;
+
+    try {
+      const updatedMembers = await Promise.all(
+        targetMembers.map(async (member) => {
+          const nextMemberType =
+            targetGroup.groupType === 'newcomer'
+              ? member.memberType === 'visitor'
+                ? 'visitor'
+                : 'registered'
+              : 'registered';
+          const savedMemberRow = await updateMember(member.id, {
+            group_id: targetGroup.id,
+            is_active: true,
+            member_type: nextMemberType,
+            name: member.name,
+          });
+          const nextMember = hasSupabaseEnv
+            ? buildAppMemberFromRow(savedMemberRow, appBootstrap.groups)
+            : buildFallbackUpdatedMember(member, appBootstrap.groups, {
+                groupId: targetGroup.id,
+                memberType: nextMemberType,
+                updatedAt: savedMemberRow.updated_at,
+              });
+
+          return [member.id, nextMember];
+        }),
+      );
+      const updatedMembersById = Object.fromEntries(updatedMembers);
+
+      await syncMembersAfterWrite(() => members.map((member) => updatedMembersById[member.id] || member));
+      setMemberDirectorySelectedRowIds([]);
+      setMemberDirectoryBulkGroupId('');
+      setToast(
+        targetMembers.length === 1
+          ? `${targetMembers[0].displayName || targetMembers[0].name} 청년의 소속 숲을 변경했어요`
+          : `${targetMembers.length}명의 소속 숲을 변경했어요`,
+      );
+    } catch (error) {
+      console.error('[app] bulk member group update failed', error);
+      setToast('소속 숲 변경 중 오류가 발생했어요');
     }
   };
 
@@ -1250,6 +1441,9 @@ export default function App() {
   const handleAdminSectionChange = (nextSection) => {
     setAdminSection(nextSection);
     setAdminPendingBulkActionType(null);
+    setMemberDirectoryConfirmAction(null);
+    setMemberDirectorySelectedRowIds([]);
+    setMemberDirectoryBulkGroupId('');
     setShowAddMemberModal(false);
     closeEditMemberModal();
   };
@@ -1305,6 +1499,28 @@ export default function App() {
           weekOptions: adminWeekOptions,
         }}
         memberDirectory={{
+          bulkAction: {
+            allRowsSelected: memberDirectoryAllRowsSelected,
+            canApplyGroupChange: Boolean(memberDirectoryBulkGroupId && memberDirectorySelectedCount > 0),
+            groupOptions: memberDirectoryGroupOptions,
+            onApplyGroupChange: handleMemberDirectoryBulkGroupApply,
+            onBulkGroupChange: setMemberDirectoryBulkGroupId,
+            onRequestDeactivateSelected: handleRequestMemberDirectoryBulkDeactivate,
+            onRowSelectToggle: handleMemberDirectoryRowSelectToggle,
+            onSelectAllRows: handleMemberDirectorySelectAllRows,
+            partiallySelected: memberDirectoryPartiallySelected,
+            selectedCount: memberDirectorySelectedCount,
+            selectedGroupId: memberDirectoryBulkGroupId,
+            selectedRowIds: memberDirectorySelectedRowIds,
+          },
+          confirmation: {
+            confirmLabel: memberDirectoryConfirmDetails?.confirmLabel || '재적에서 제외',
+            description: memberDirectoryConfirmDetails?.description || '',
+            isOpen: Boolean(memberDirectoryConfirmDetails),
+            onCancel: () => setMemberDirectoryConfirmAction(null),
+            onConfirm: handleConfirmMemberDirectoryDeactivate,
+            title: memberDirectoryConfirmDetails?.title || '',
+          },
           editMember: {
             canSave: Boolean(editMemberDraft.name.trim() && editMemberDraft.groupId),
             draft: editMemberDraft,

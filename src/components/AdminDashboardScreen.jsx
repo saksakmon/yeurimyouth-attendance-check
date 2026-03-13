@@ -55,6 +55,35 @@ function SidebarItem({ active, children, onClick }) {
   );
 }
 
+function AdminButton({
+  children,
+  className,
+  danger = false,
+  icon = false,
+  inline = false,
+  large = false,
+  variant = 'secondary',
+  ...props
+}) {
+  const classes = [
+    'admin-button',
+    `admin-button-${variant}`,
+    danger ? 'admin-button-danger' : '',
+    inline ? 'admin-button-inline' : '',
+    large ? 'admin-button-lg' : '',
+    icon ? 'admin-button-icon' : '',
+    className || '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <button type="button" className={classes} {...props}>
+      {children}
+    </button>
+  );
+}
+
 function FilterChip({ children }) {
   return <span className="admin-chip">{children}</span>;
 }
@@ -73,11 +102,79 @@ function formatDateTextInput(value) {
   return `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6)}`;
 }
 
+const CALENDAR_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+function parseDateTextValue(value) {
+  const digits = String(value || '')
+    .replace(/\D/g, '')
+    .slice(0, 8);
+
+  if (digits.length !== 8) return null;
+
+  const year = Number(digits.slice(0, 4));
+  const month = Number(digits.slice(4, 6));
+  const day = Number(digits.slice(6, 8));
+  const parsed = new Date(year, month - 1, day);
+
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() + 1 !== month ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function formatDateTextValueFromDate(date) {
+  return formatDateTextInput(
+    `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`,
+  );
+}
+
+function getCalendarMonthBase(value) {
+  const parsed = parseDateTextValue(value);
+  const base = parsed || new Date();
+  return new Date(base.getFullYear(), base.getMonth(), 1);
+}
+
+function getCalendarMonthLabel(date) {
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isSameCalendarDate(a, b) {
+  if (!a || !b) return false;
+
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function buildCalendarDays(viewDate) {
+  const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+  const calendarStart = new Date(monthStart);
+  calendarStart.setDate(monthStart.getDate() - monthStart.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    return {
+      date,
+      isCurrentMonth: date.getMonth() === viewDate.getMonth(),
+      key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
+    };
+  });
+}
+
 function OptionCheckIcon({ visible }) {
   return <span className={`admin-option-check ${visible ? 'admin-option-check-visible' : ''}`}>✓</span>;
 }
 
-function IndeterminateCheckbox({ checked, indeterminate, onChange }) {
+function IndeterminateCheckbox({ checked, disabled = false, indeterminate, onChange }) {
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -85,7 +182,7 @@ function IndeterminateCheckbox({ checked, indeterminate, onChange }) {
     inputRef.current.indeterminate = indeterminate;
   }, [indeterminate]);
 
-  return <input ref={inputRef} type="checkbox" checked={checked} onChange={onChange} className="admin-checkbox" />;
+  return <input ref={inputRef} type="checkbox" checked={checked} disabled={disabled} onChange={onChange} className="admin-checkbox" />;
 }
 
 function MultiSelectField({
@@ -185,6 +282,112 @@ function SingleSelectField({
               <OptionCheckIcon visible={selectedValue === option.value} />
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DatePickerField({ label, onChange, onClose, onOpen, open, placeholder, value, wrapperRef }) {
+  const [viewDate, setViewDate] = useState(() => getCalendarMonthBase(value));
+  const selectedDate = useMemo(() => parseDateTextValue(value), [value]);
+  const calendarDays = useMemo(() => buildCalendarDays(viewDate), [viewDate]);
+  const today = useMemo(() => new Date(), []);
+
+  useEffect(() => {
+    if (open) {
+      setViewDate(getCalendarMonthBase(value));
+    }
+  }, [open, value]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      {label ? <div className="admin-field-label">{label}</div> : null}
+
+      <div className={`admin-control admin-date-field ${open ? 'admin-control-open' : ''}`}>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(event) => onChange(formatDateTextInput(event.target.value))}
+          onClick={onOpen}
+          onFocus={onOpen}
+          className="admin-input admin-date-input w-full"
+          placeholder={placeholder}
+        />
+        <button type="button" className="admin-date-trigger" onClick={onOpen} aria-label={`${placeholder} 달력 열기`}>
+          <span className="admin-date-trigger-icon" />
+        </button>
+      </div>
+
+      {open && (
+        <div className="admin-dropdown-panel admin-calendar-panel">
+          <div className="admin-calendar-header">
+            <button
+              type="button"
+              className="admin-calendar-nav"
+              onClick={() => setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+              aria-label="이전 달"
+            >
+              ‹
+            </button>
+            <div className="admin-calendar-month">{getCalendarMonthLabel(viewDate)}</div>
+            <button
+              type="button"
+              className="admin-calendar-nav"
+              onClick={() => setViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+              aria-label="다음 달"
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="admin-calendar-weekdays">
+            {CALENDAR_WEEKDAYS.map((weekday) => (
+              <span key={weekday}>{weekday}</span>
+            ))}
+          </div>
+
+          <div className="admin-calendar-grid">
+            {calendarDays.map((day) => (
+              <button
+                key={day.key}
+                type="button"
+                className={`admin-calendar-day ${day.isCurrentMonth ? '' : 'admin-calendar-day-muted'} ${
+                  isSameCalendarDate(day.date, selectedDate) ? 'admin-calendar-day-selected' : ''
+                } ${isSameCalendarDate(day.date, today) ? 'admin-calendar-day-today' : ''}`}
+                onClick={() => {
+                  onChange(formatDateTextValueFromDate(day.date));
+                  onClose();
+                }}
+              >
+                {day.date.getDate()}
+              </button>
+            ))}
+          </div>
+
+          <div className="admin-calendar-footer">
+            <button
+              type="button"
+              className="admin-calendar-footer-button"
+              onClick={() => {
+                onChange('');
+                onClose();
+              }}
+            >
+              지우기
+            </button>
+            <button
+              type="button"
+              className="admin-calendar-footer-button admin-calendar-footer-button-strong"
+              onClick={() => {
+                onChange(formatDateTextValueFromDate(new Date()));
+                onClose();
+              }}
+            >
+              오늘
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -304,6 +507,8 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
     { value: MEMBER_DIRECTORY_GROUP_ALL_VALUE, label: '전체' },
     ...memberDirectory.filters.groupOptions,
   ];
+  const selectedBulkGroupLabel =
+    memberDirectory.bulkAction.groupOptions.find((option) => option.value === memberDirectory.bulkAction.selectedGroupId)?.label || '';
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-5 py-5 lg:px-8 lg:py-6">
@@ -341,8 +546,9 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
       <section className="admin-surface mt-4 p-4 lg:p-5">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
+            <div className="admin-field-label">상태</div>
             <SingleSelectField
-              className="mt-0"
+              className="mt-2"
               onOptionSelect={(value) => {
                 memberDirectory.filters.onDraftChange('status', value);
                 setOpenField(null);
@@ -350,59 +556,59 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
               onToggleOpen={() => setOpenField(openField === 'member-directory-status' ? null : 'member-directory-status')}
               open={openField === 'member-directory-status'}
               options={MEMBER_DIRECTORY_FILTER_OPTIONS}
-              selectedLabel={`상태 · ${selectedStatusLabel}`}
+              placeholder="전체"
+              selectedLabel={selectedStatusLabel}
               selectedValue={memberDirectory.filters.draft.status}
               wrapperRef={bindFieldRef('member-directory-status')}
             />
           </div>
 
           <div>
-            <div className="admin-date-range">
-              <div className="admin-date-input-wrap">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={memberDirectory.filters.draft.registeredFrom}
-                  onChange={(event) =>
-                    memberDirectory.filters.onDraftChange('registeredFrom', formatDateTextInput(event.target.value))
-                  }
-                  className="admin-control admin-input admin-date-input w-full"
-                  placeholder="시작일"
-                />
-              </div>
-              <div className="admin-date-input-wrap">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={memberDirectory.filters.draft.registeredTo}
-                  onChange={(event) =>
-                    memberDirectory.filters.onDraftChange('registeredTo', formatDateTextInput(event.target.value))
-                  }
-                  className="admin-control admin-input admin-date-input w-full"
-                  placeholder="종료일"
-                />
-              </div>
+            <div className="admin-field-label">등록일</div>
+            <div className="admin-date-range mt-2">
+              <DatePickerField
+                label=""
+                onChange={(value) => memberDirectory.filters.onDraftChange('registeredFrom', value)}
+                onClose={() => setOpenField(null)}
+                onOpen={() => setOpenField('member-directory-date-from')}
+                open={openField === 'member-directory-date-from'}
+                placeholder="시작일"
+                value={memberDirectory.filters.draft.registeredFrom}
+                wrapperRef={bindFieldRef('member-directory-date-from')}
+              />
+              <DatePickerField
+                label=""
+                onChange={(value) => memberDirectory.filters.onDraftChange('registeredTo', value)}
+                onClose={() => setOpenField(null)}
+                onOpen={() => setOpenField('member-directory-date-to')}
+                open={openField === 'member-directory-date-to'}
+                placeholder="종료일"
+                value={memberDirectory.filters.draft.registeredTo}
+                wrapperRef={bindFieldRef('member-directory-date-to')}
+              />
             </div>
           </div>
 
           <div>
+            <div className="admin-field-label">소속 숲</div>
             <MultiSelectField
-              className="mt-0"
+              className="mt-2"
               chips={[<FilterSummaryText key="member-directory-group-summary">{selectedGroupSummary}</FilterSummaryText>]}
               label=""
               onOptionToggle={memberDirectory.filters.onDraftGroupToggle}
               onToggleOpen={() => setOpenField(openField === 'member-directory-group' ? null : 'member-directory-group')}
               open={openField === 'member-directory-group'}
               options={memberDirectoryGroupFilterOptions}
-              placeholder="소속 숲 · 전체"
+              placeholder="전체"
               selectedValues={selectedGroupValues}
               wrapperRef={bindFieldRef('member-directory-group')}
             />
           </div>
 
           <div>
+            <div className="admin-field-label">유형</div>
             <SingleSelectField
-              className="mt-0"
+              className="mt-2"
               onOptionSelect={(value) => {
                 memberDirectory.filters.onDraftChange('type', value);
                 setOpenField(null);
@@ -410,7 +616,8 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
               onToggleOpen={() => setOpenField(openField === 'member-directory-type' ? null : 'member-directory-type')}
               open={openField === 'member-directory-type'}
               options={MEMBER_DIRECTORY_TYPE_OPTIONS}
-              selectedLabel={`유형 · ${selectedTypeLabel}`}
+              placeholder="전체"
+              selectedLabel={selectedTypeLabel}
               selectedValue={memberDirectory.filters.draft.type}
               wrapperRef={bindFieldRef('member-directory-type')}
             />
@@ -437,14 +644,65 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
       </section>
 
       <section className="admin-surface mt-4 overflow-hidden">
-        <div className="flex items-center justify-between border-b border-black/6 px-4 py-3">
-          <div className="text-sm font-semibold text-black/65">총 {memberDirectory.rows.length}명</div>
+        <div className="flex flex-col gap-3 border-b border-black/6 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-black/65">
+              {memberDirectory.bulkAction.selectedCount > 0
+                ? `${memberDirectory.bulkAction.selectedCount}명 선택됨`
+                : `총 ${memberDirectory.rows.length}명`}
+            </div>
+
+            {memberDirectory.bulkAction.selectedCount > 0 && (
+              <>
+                <SingleSelectField
+                  className="min-w-[180px]"
+                  onOptionSelect={(value) => {
+                    memberDirectory.bulkAction.onBulkGroupChange(value);
+                    setOpenField(null);
+                  }}
+                  onToggleOpen={() =>
+                    setOpenField(openField === 'member-directory-bulk-group' ? null : 'member-directory-bulk-group')
+                  }
+                  open={openField === 'member-directory-bulk-group'}
+                  options={memberDirectory.bulkAction.groupOptions}
+                  placeholder="숲 변경"
+                  selectedLabel={selectedBulkGroupLabel}
+                  selectedValue={memberDirectory.bulkAction.selectedGroupId}
+                  wrapperRef={bindFieldRef('member-directory-bulk-group')}
+                />
+
+                <AdminButton
+                  variant="secondary"
+                  disabled={!memberDirectory.bulkAction.canApplyGroupChange}
+                  onClick={memberDirectory.bulkAction.onApplyGroupChange}
+                >
+                  숲 변경
+                </AdminButton>
+
+                <AdminButton
+                  variant="secondary"
+                  danger
+                  onClick={memberDirectory.bulkAction.onRequestDeactivateSelected}
+                >
+                  재적에서 제외
+                </AdminButton>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="overflow-auto">
-          <table className="w-full min-w-[1120px] border-collapse text-sm">
+          <table className="w-full min-w-[1180px] border-collapse text-sm">
             <thead className="bg-black/[0.024] text-left">
               <tr>
+                <th className="px-4 py-3">
+                  <IndeterminateCheckbox
+                    checked={memberDirectory.bulkAction.allRowsSelected}
+                    disabled={memberDirectory.rows.filter((row) => row.isActive).length === 0}
+                    indeterminate={memberDirectory.bulkAction.partiallySelected}
+                    onChange={memberDirectory.bulkAction.onSelectAllRows}
+                  />
+                </th>
                 <th className="px-4 py-3 font-semibold text-black/45">표시 이름</th>
                 <th className="px-4 py-3 font-semibold text-black/45">이름</th>
                 <th className="px-4 py-3 font-semibold text-black/45">유형</th>
@@ -458,6 +716,14 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
               {memberDirectory.rows.length > 0 ? (
                 memberDirectory.rows.map((row) => (
                   <tr key={row.id} className="admin-table-row">
+                    <td className="px-4 py-3">
+                      <IndeterminateCheckbox
+                        checked={memberDirectory.bulkAction.selectedRowIds.includes(row.id)}
+                        disabled={!row.isActive}
+                        indeterminate={false}
+                        onChange={() => memberDirectory.bulkAction.onRowSelectToggle(row.id)}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-semibold text-black/82">{row.displayName}</td>
                     <td className="px-4 py-3 text-black/58">{row.rawName}</td>
                     <td className="px-4 py-3 text-black/58">{row.memberTypeLabel}</td>
@@ -468,27 +734,24 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
                     <td className="px-4 py-3 text-black/58">{row.createdAtLabel}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="admin-button admin-button-secondary admin-button-inline"
-                          onClick={() => memberDirectory.editMember.onOpen(row.id)}
-                        >
+                        <AdminButton variant="secondary" inline onClick={() => memberDirectory.editMember.onOpen(row.id)}>
                           수정
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-button admin-button-tertiary admin-button-inline"
+                        </AdminButton>
+                        <AdminButton
+                          variant={row.isActive ? 'secondary' : 'tertiary'}
+                          danger={row.isActive}
+                          inline
                           onClick={() => memberDirectory.onToggleActive(row.id)}
                         >
                           {row.isActive ? '재적에서 제외' : '복구'}
-                        </button>
+                        </AdminButton>
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="admin-empty-state">
+                  <td colSpan="8" className="admin-empty-state">
                     조건에 맞는 청년이 없어요.
                   </td>
                 </tr>
@@ -587,6 +850,26 @@ function EditMemberModal({ accentColor, bindFieldRef, editMember, isVisible, ope
   );
 }
 
+function MemberDirectoryConfirmModal({ confirmation, isVisible }) {
+  return (
+    <div className={`admin-overlay ${isVisible ? 'admin-overlay-visible' : ''}`}>
+      <div className={`admin-modal-panel ${isVisible ? 'admin-modal-panel-visible' : ''}`}>
+        <div className="text-[24px] font-semibold tracking-tight text-black">{confirmation.title}</div>
+        <div className="mt-3 text-[16px] leading-[1.6] text-black/60">{confirmation.description}</div>
+
+        <div className="mt-7 grid grid-cols-2 gap-3">
+          <AdminButton variant="secondary" onClick={confirmation.onCancel}>
+            취소
+          </AdminButton>
+          <AdminButton variant="primary" danger onClick={confirmation.onConfirm}>
+            {confirmation.confirmLabel}
+          </AdminButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboardScreen({
   activeSection,
   accentColor,
@@ -607,6 +890,7 @@ export default function AdminDashboardScreen({
   const bulkModal = usePresence(Boolean(bulkAction.pendingType));
   const addMemberModal = usePresence(addMember.isOpen);
   const editMemberModal = usePresence(memberDirectory.editMember.isOpen);
+  const memberDirectoryConfirmModal = usePresence(memberDirectory.confirmation.isOpen);
   const threeWeekModal = usePresence(showThreeWeekModal);
 
   const bindFieldRef = (key) => (node) => {
@@ -643,6 +927,12 @@ export default function AdminDashboardScreen({
       setOpenField(null);
     }
   }, [memberDirectory.editMember.isOpen, openField]);
+
+  useEffect(() => {
+    if (memberDirectory.bulkAction.selectedCount === 0 && openField === 'member-directory-bulk-group') {
+      setOpenField(null);
+    }
+  }, [memberDirectory.bulkAction.selectedCount, openField]);
 
   useEffect(() => {
     setOpenField(null);
@@ -1132,6 +1422,13 @@ export default function AdminDashboardScreen({
           isVisible={editMemberModal.isVisible}
           openField={openField}
           setOpenField={setOpenField}
+        />
+      )}
+
+      {memberDirectoryConfirmModal.shouldRender && memberDirectory.confirmation.isOpen && (
+        <MemberDirectoryConfirmModal
+          confirmation={memberDirectory.confirmation}
+          isVisible={memberDirectoryConfirmModal.isVisible}
         />
       )}
 
