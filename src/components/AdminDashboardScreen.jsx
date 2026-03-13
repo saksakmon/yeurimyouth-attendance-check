@@ -554,7 +554,7 @@ function TableSelectField({ onOptionSelect, onToggleOpen, open, options, selecte
 
   return (
     <SingleSelectField
-      className="min-w-[136px]"
+      className="min-w-[112px]"
       onOptionSelect={onOptionSelect}
       onToggleOpen={onToggleOpen}
       open={open}
@@ -631,13 +631,13 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
       <section className="mt-4 grid gap-3 lg:grid-cols-3">
         <div className="admin-surface admin-card-hover p-4 lg:p-5">
           <div className="admin-overline">전체 회원</div>
-          <div className="mt-4 text-[32px] font-semibold leading-none">{memberDirectory.summary.totalCount}명</div>
+          <div className="admin-metric-value mt-4">{memberDirectory.summary.totalCount}명</div>
           <div className="mt-1.5 text-sm text-black/45">활성 + 비활성 포함</div>
         </div>
 
         <div className="admin-surface admin-card-hover p-4 lg:p-5">
           <div className="admin-overline">재적 인원</div>
-          <div className="mt-4 text-[32px] font-semibold leading-none" style={{ color: accentColor }}>
+          <div className="admin-metric-value mt-4" style={{ color: accentColor }}>
             {memberDirectory.summary.activeCount}명
           </div>
           <div className="mt-1.5 text-sm text-black/45">출결관리와 키오스크 노출 대상</div>
@@ -645,7 +645,7 @@ function MemberDirectorySection({ accentColor, bindFieldRef, memberDirectory, op
 
         <div className="admin-surface admin-card-hover p-4 lg:p-5">
           <div className="admin-overline">재적 제외 인원</div>
-          <div className="mt-4 text-[32px] font-semibold leading-none">{memberDirectory.summary.inactiveCount}명</div>
+          <div className="admin-metric-value mt-4">{memberDirectory.summary.inactiveCount}명</div>
           <div className="mt-1.5 text-sm text-black/45">이력은 유지되고 출결관리에서는 제외돼요</div>
         </div>
       </section>
@@ -1175,7 +1175,7 @@ export default function AdminDashboardScreen({
                   출결관리
                 </SidebarItem>
                 <SidebarItem active={activeSection === 'members'} onClick={() => navigation.onSectionChange('members')}>
-                  인적 및 인원관리
+                  인원관리
                 </SidebarItem>
               </div>
             </div>
@@ -1201,11 +1201,11 @@ export default function AdminDashboardScreen({
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="text-[26px] font-semibold tracking-tight text-black">
-                  {activeSection === 'members' ? '인적 및 인원관리' : '출결관리'}
+                  {activeSection === 'members' ? '인원관리' : '출결관리'}
                 </div>
                 <div className="mt-1 text-sm text-black/45">
                   {activeSection === 'members'
-                    ? '회원 정보를 수정하고 비활성 상태를 관리할 수 있어요.'
+                    ? '회원 정보를 수정하고 재적 상태를 관리할 수 있어요.'
                     : '주차별 출결 현황을 확인하고 수정할 수 있어요.'}
                 </div>
               </div>
@@ -1316,17 +1316,17 @@ export default function AdminDashboardScreen({
                   <div className="admin-overline">출석 현황</div>
                   <div className="mt-4 grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-[32px] font-semibold leading-none" style={{ color: accentColor }}>
+                      <div className="admin-metric-value" style={{ color: accentColor }}>
                         {summary.attendanceCount}
                       </div>
                       <div className="mt-1.5 text-sm text-black/45">출석</div>
                     </div>
                     <div>
-                      <div className="text-[32px] font-semibold leading-none">{summary.totalCount}</div>
+                      <div className="admin-metric-value">{summary.totalCount}</div>
                       <div className="mt-1.5 text-sm text-black/45">재적</div>
                     </div>
                     <div>
-                      <div className="text-[32px] font-semibold leading-none">{summary.attendanceRate}%</div>
+                      <div className="admin-metric-value">{summary.attendanceRate}%</div>
                       <div className="mt-1.5 text-sm text-black/45">출석률</div>
                     </div>
                   </div>
@@ -1343,7 +1343,7 @@ export default function AdminDashboardScreen({
                       명단보기
                     </button>
                   </div>
-                  <div className="mt-4 text-[32px] font-semibold leading-none">{summary.threeWeekAbsenceCount}명</div>
+                  <div className="admin-metric-value mt-4">{summary.threeWeekAbsenceCount}명</div>
                   <div className="mt-1.5 text-sm text-black/45">등록 후 3주가 지난 청년 중 최근 3주 기준</div>
                 </div>
               </section>
@@ -1393,34 +1393,34 @@ export default function AdminDashboardScreen({
                   <table className="w-full min-w-[1080px] border-collapse text-sm">
                     <thead className="bg-black/[0.024] text-left">
                       <tr>
-                        <th className="px-4 py-3">
+                        <th className="px-4 py-2.5">
                           <IndeterminateCheckbox
                             checked={allRowsSelected}
                             indeterminate={partiallySelected}
                             onChange={table.onSelectAllRows}
                           />
                         </th>
-                        <th className="px-4 py-3 font-semibold text-black/45">이름</th>
-                        <th className="px-4 py-3 font-semibold text-black/45">유형</th>
-                        <th className="px-4 py-3 font-semibold text-black/45">소속 숲</th>
-                        <th className="px-4 py-3 font-semibold text-black/45">출결유무</th>
-                        <th className="px-4 py-3 font-semibold text-black/45">출석시각</th>
+                        <th className="px-4 py-2.5 font-semibold text-black/45">이름</th>
+                        <th className="px-4 py-2.5 font-semibold text-black/45">유형</th>
+                        <th className="px-4 py-2.5 font-semibold text-black/45">소속 숲</th>
+                        <th className="px-4 py-2.5 font-semibold text-black/45">출결유무</th>
+                        <th className="px-4 py-2.5 font-semibold text-black/45">출석시각</th>
                       </tr>
                     </thead>
                     <tbody>
                       {table.rows.map((row) => (
                         <tr key={row.id} className="admin-table-row">
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-2.5">
                             <IndeterminateCheckbox
                               checked={table.selectedRowIds.includes(row.id)}
                               indeterminate={false}
                               onChange={() => table.onRowSelectToggle(row.id)}
                             />
                           </td>
-                          <td className="px-4 py-3 font-semibold text-black/82">{row.name}</td>
-                          <td className="px-4 py-3 text-black/58">{row.memberTypeLabel}</td>
-                          <td className="px-4 py-3 text-black/58">{row.groupName || '-'}</td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-2.5 font-semibold text-black/82">{row.name}</td>
+                          <td className="px-4 py-2.5 text-black/58">{row.memberTypeLabel}</td>
+                          <td className="px-4 py-2.5 text-black/58">{row.groupName || '-'}</td>
+                          <td className="px-4 py-2">
                             <TableSelectField
                               onOptionSelect={(value) => {
                                 table.onAttendanceTypeChange(row.id, value);
@@ -1433,7 +1433,7 @@ export default function AdminDashboardScreen({
                               wrapperRef={bindFieldRef(`attendance-${row.id}`)}
                             />
                           </td>
-                          <td className="px-4 py-3 text-black/58">{row.attendedAt || '-'}</td>
+                          <td className="px-4 py-2.5 text-black/58">{row.attendedAt || '-'}</td>
                         </tr>
                       ))}
                     </tbody>

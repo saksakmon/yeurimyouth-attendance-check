@@ -198,6 +198,12 @@ select:hover {
   color: rgba(17, 24, 39, 0.38);
 }
 
+.admin-metric-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .admin-field-label {
   font-size: 11px;
   font-weight: 700;
@@ -1022,9 +1028,30 @@ select:hover {
 }
 
 .admin-table-select-trigger {
-  min-width: 136px;
-  padding-inline: 10px;
+  min-height: 28px;
+  min-width: 112px;
+  border-color: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: none;
+  padding-inline: 9px;
   font-size: 12px;
+  font-weight: 700;
+  color: rgba(17, 24, 39, 0.72);
+}
+
+.admin-table-select-trigger:hover {
+  background: rgba(241, 245, 249, 0.98);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+.admin-table-select-trigger .admin-control-value {
+  min-width: 0;
+}
+
+.admin-table-select-trigger .admin-caret {
+  margin-left: 8px;
+  font-size: 11px;
 }
 
 .admin-modal-panel-wide {
