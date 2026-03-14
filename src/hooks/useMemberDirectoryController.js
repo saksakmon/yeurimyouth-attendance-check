@@ -228,6 +228,18 @@ export function useMemberDirectoryController({
     return false;
   };
 
+  const persistMemberHistoryEntries = async (entries) => {
+    if (!entries?.length) return true;
+
+    try {
+      await appendMemberHistoryEntries(entries);
+      return true;
+    } catch (error) {
+      console.error('[memberDirectory] member history sync failed', error);
+      return false;
+    }
+  };
+
   const handleAddMemberDraftChange = (field, value) => {
     setAddMemberDraft((prev) => {
       if (field === 'groupId' && !isNewcomerGroupId(appBootstrap.groups, value)) {
@@ -266,7 +278,7 @@ export function useMemberDirectoryController({
         resolveMemberDisplayNames(syncedMembers).find((member) => member.id === savedMemberRow.id)?.displayName ||
         expectedDisplayName;
 
-      appendMemberHistoryEntries([
+      const historySaved = await persistMemberHistoryEntries([
         buildMemberHistoryEntry({
           actionLabel: '회원 추가',
           changedAt: savedMemberRow.updated_at || savedMemberRow.created_at || new Date().toISOString(),
@@ -291,7 +303,11 @@ export function useMemberDirectoryController({
       }
 
       closeAddMemberModal();
-      setToast(`${createdMemberDisplayName} 청년을 추가했어요`);
+      setToast(
+        historySaved
+          ? `${createdMemberDisplayName} 청년을 추가했어요`
+          : `${createdMemberDisplayName} 청년을 추가했지만 변경 이력 저장은 실패했어요`,
+      );
     } catch (error) {
       console.error('[memberDirectory] add member save failed', error);
       setToast('청년 추가 저장 중 오류가 발생했어요');
@@ -361,7 +377,7 @@ export function useMemberDirectoryController({
       const updatedDisplayName =
         resolveMemberDisplayNames(syncedMembers).find((member) => member.id === editingMemberId)?.displayName || trimmedName;
 
-      appendMemberHistoryEntries([
+      const historySaved = await persistMemberHistoryEntries([
         buildMemberHistoryEntry({
           actionLabel: '회원 정보 수정',
           changedAt: savedMemberRow.updated_at || new Date().toISOString(),
@@ -372,7 +388,11 @@ export function useMemberDirectoryController({
       ]);
 
       closeEditMemberModal();
-      setToast(`${updatedDisplayName} 정보를 수정했어요`);
+      setToast(
+        historySaved
+          ? `${updatedDisplayName} 정보를 수정했어요`
+          : `${updatedDisplayName} 정보를 수정했지만 변경 이력 저장은 실패했어요`,
+      );
     } catch (error) {
       console.error('[memberDirectory] edit member save failed', error);
       setToast('회원 정보 저장 중 오류가 발생했어요');
@@ -413,7 +433,7 @@ export function useMemberDirectoryController({
         member.displayName ||
         member.name;
 
-      appendMemberHistoryEntries([
+      const historySaved = await persistMemberHistoryEntries([
         buildMemberHistoryEntry({
           actionLabel: nextIsActive ? '재적 복구' : '재적 제외',
           changedAt: savedMemberRow.updated_at || new Date().toISOString(),
@@ -426,7 +446,15 @@ export function useMemberDirectoryController({
       ]);
 
       clearConfirmTargetForMembers([memberId]);
-      setToast(nextIsActive ? `${toggledDisplayName} 청년을 다시 복구했어요` : `${toggledDisplayName} 청년을 재적에서 제외했어요`);
+      setToast(
+        nextIsActive
+          ? historySaved
+            ? `${toggledDisplayName} 청년을 다시 복구했어요`
+            : `${toggledDisplayName} 청년을 복구했지만 변경 이력 저장은 실패했어요`
+          : historySaved
+            ? `${toggledDisplayName} 청년을 재적에서 제외했어요`
+            : `${toggledDisplayName} 청년을 재적에서 제외했지만 변경 이력 저장은 실패했어요`,
+      );
     } catch (error) {
       console.error('[memberDirectory] member active toggle failed', error);
       setToast('회원 상태 변경 중 오류가 발생했어요');
@@ -508,7 +536,7 @@ export function useMemberDirectoryController({
         targetMembers[0]?.name ||
         '선택한 청년';
 
-      appendMemberHistoryEntries(
+      const historySaved = await persistMemberHistoryEntries(
         updatedMembers.map(([memberId, nextMember]) =>
           buildMemberHistoryEntry({
             actionLabel: '재적 제외',
@@ -529,8 +557,12 @@ export function useMemberDirectoryController({
       setMemberDirectoryConfirmAction(null);
       setToast(
         targetMembers.length === 1
-          ? `${firstLabel} 청년을 재적에서 제외했어요`
-          : `${targetMembers.length}명의 청년을 재적에서 제외했어요`,
+          ? historySaved
+            ? `${firstLabel} 청년을 재적에서 제외했어요`
+            : `${firstLabel} 청년을 재적에서 제외했지만 변경 이력 저장은 실패했어요`
+          : historySaved
+            ? `${targetMembers.length}명의 청년을 재적에서 제외했어요`
+            : `${targetMembers.length}명의 청년을 재적에서 제외했지만 변경 이력 저장은 실패했어요`,
       );
     } catch (error) {
       console.error('[memberDirectory] bulk deactivate failed', error);
@@ -581,7 +613,7 @@ export function useMemberDirectoryController({
       );
       const updatedMembersById = Object.fromEntries(updatedMembers);
 
-      appendMemberHistoryEntries(
+      const historySaved = await persistMemberHistoryEntries(
         updatedMembers.map(([memberId, nextMember]) => {
           const previousMember = targetMembers.find((member) => member.id === memberId);
           const previousGroupName = previousMember?.groupName || '-';
@@ -610,8 +642,12 @@ export function useMemberDirectoryController({
       setMemberDirectoryBulkGroupModalOpen(false);
       setToast(
         targetMembers.length === 1
-          ? `${targetMembers[0].displayName || targetMembers[0].name} 청년의 소속 숲을 변경했어요`
-          : `${targetMembers.length}명의 소속 숲을 변경했어요`,
+          ? historySaved
+            ? `${targetMembers[0].displayName || targetMembers[0].name} 청년의 소속 숲을 변경했어요`
+            : `${targetMembers[0].displayName || targetMembers[0].name} 청년의 소속 숲을 변경했지만 변경 이력 저장은 실패했어요`
+          : historySaved
+            ? `${targetMembers.length}명의 소속 숲을 변경했어요`
+            : `${targetMembers.length}명의 소속 숲을 변경했지만 변경 이력 저장은 실패했어요`,
       );
     } catch (error) {
       console.error('[memberDirectory] bulk group update failed', error);

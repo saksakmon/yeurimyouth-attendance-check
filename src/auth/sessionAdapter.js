@@ -33,26 +33,6 @@ function safeLocalStorage() {
   return window.localStorage;
 }
 
-function parseRoleOverrides(rawValue) {
-  if (!rawValue) return {};
-
-  try {
-    const parsed = JSON.parse(rawValue);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .map(([email, role]) => [String(email || '').trim().toLowerCase(), normalizeRole(role)])
-        .filter(([, role]) => Boolean(role)),
-    );
-  } catch (error) {
-    console.warn('[auth] failed to parse VITE_ADMIN_ROLE_OVERRIDES', error);
-    return {};
-  }
-}
-
-const ROLE_OVERRIDES = parseRoleOverrides(import.meta.env.VITE_ADMIN_ROLE_OVERRIDES);
-
 function mapSupabaseAuthError(error) {
   const message = String(error?.message || '').toLowerCase();
   const code = String(error?.code || '').toLowerCase();
@@ -157,17 +137,9 @@ function resolveUserName(user) {
 }
 
 export function resolveUserRole(user) {
-  const email = String(user?.email || '')
-    .trim()
-    .toLowerCase();
-
   const candidates = [
     user?.app_metadata?.admin_role,
-    ROLE_OVERRIDES[email],
     user?.app_metadata?.role,
-    user?.user_metadata?.admin_role,
-    user?.user_metadata?.role,
-    user?.role,
   ];
 
   for (const candidate of candidates) {

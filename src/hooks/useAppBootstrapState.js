@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { saveAttendanceRecord } from '../api/attendanceRecords.js';
 import { getAppBootstrapData, getFallbackAppBootstrapData } from '../api/bootstrap.js';
+import { getMemberChangeHistory, saveMemberChangeHistoryEntries } from '../api/memberChangeHistory.js';
 import { getMembers } from '../api/members.js';
+import { ROLES, normalizeRole } from '../auth/permissions.js';
 import { hasSupabaseEnv } from '../lib/supabase.js';
 import {
   buildAppAttendanceRecordFromRow,
@@ -15,19 +17,39 @@ import { buildAppMemberFromRow } from '../domain/members/memberHelpers.js';
 const { useCallback, useEffect, useState } = React;
 
 const FALLBACK_BOOTSTRAP = getFallbackAppBootstrapData();
+const SERVER_HISTORY_ROLES = new Set([ROLES.superAdmin, ROLES.admin]);
 
-export function useAppBootstrapState() {
+function getLocalMemberHistorySeed() {
+  return hasSupabaseEnv ? [] : loadMemberChangeHistory();
+}
+
+export function useAppBootstrapState(auth) {
   const [appBootstrap, setAppBootstrap] = useState(() => FALLBACK_BOOTSTRAP);
   const [members, setMembers] = useState(() => FALLBACK_BOOTSTRAP.members);
   const [attendanceRecords, setAttendanceRecords] = useState(() => FALLBACK_BOOTSTRAP.attendanceRecords);
   const [newcomerIntakes, setNewcomerIntakes] = useState(() => FALLBACK_BOOTSTRAP.newcomerIntakes);
-  const [memberChangeHistory, setMemberChangeHistory] = useState(() => loadMemberChangeHistory());
+  const [memberChangeHistory, setMemberChangeHistory] = useState(() => getLocalMemberHistorySeed());
   const [toast, setToast] = useState('');
+  const resolvedRole = normalizeRole(auth?.currentUser?.role);
+  const canPersistServerHistory = SERVER_HISTORY_ROLES.has(resolvedRole);
 
   useEffect(() => {
+    if (hasSupabaseEnv && auth?.status === 'loading') {
+      return undefined;
+    }
+
     let active = true;
 
     async function loadBootstrap() {
+      if (!hasSupabaseEnv) {
+        setAppBootstrap(FALLBACK_BOOTSTRAP);
+        setMembers(FALLBACK_BOOTSTRAP.members);
+        setAttendanceRecords(FALLBACK_BOOTSTRAP.attendanceRecords);
+        setNewcomerIntakes(FALLBACK_BOOTSTRAP.newcomerIntakes);
+        setMemberChangeHistory(loadMemberChangeHistory());
+        return;
+      }
+
       try {
         const data = await getAppBootstrapData();
         if (!active) return;
@@ -36,8 +58,29 @@ export function useAppBootstrapState() {
         setMembers(data.members);
         setAttendanceRecords(data.attendanceRecords);
         setNewcomerIntakes(data.newcomerIntakes);
+
+        if (canPersistServerHistory) {
+          try {
+            const historyRows = await getMemberChangeHistory();
+            if (!active) return;
+            setMemberChangeHistory(historyRows);
+          } catch (historyError) {
+            console.warn('[appState] member history bootstrap failed, continuing without history', historyError);
+            if (!active) return;
+            setMemberChangeHistory([]);
+          }
+          return;
+        }
+
+        setMemberChangeHistory([]);
       } catch (error) {
         console.warn('Failed to load bootstrap data, using fallback mock source:', error);
+        if (!active) return;
+        setAppBootstrap(FALLBACK_BOOTSTRAP);
+        setMembers(FALLBACK_BOOTSTRAP.members);
+        setAttendanceRecords(FALLBACK_BOOTSTRAP.attendanceRecords);
+        setNewcomerIntakes(FALLBACK_BOOTSTRAP.newcomerIntakes);
+        setMemberChangeHistory(getLocalMemberHistorySeed());
       }
     }
 
@@ -45,10 +88,10 @@ export function useAppBootstrapState() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [auth?.status, auth?.isAuthenticated, auth?.currentUser?.id, resolvedRole, canPersistServerHistory]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (hasSupabaseEnv || typeof window === 'undefined') return;
 
     try {
       window.localStorage.setItem(MEMBER_CHANGE_HISTORY_STORAGE_KEY, JSON.stringify(memberChangeHistory));
@@ -121,10 +164,25 @@ export function useAppBootstrapState() {
     [attendanceRecords],
   );
 
-  const appendMemberHistoryEntries = useCallback((entries) => {
-    if (!entries?.length) return;
-    setMemberChangeHistory((prev) => [...entries, ...prev]);
-  }, []);
+  const appendMemberHistoryEntries = useCallback(
+    async (entries) => {
+      if (!entries?.length) return [];
+
+      if (hasSupabaseEnv) {
+        if (!canPersistServerHistory) {
+          throw new Error('[member_change_history] current session cannot persist member history');
+        }
+
+        const savedEntries = await saveMemberChangeHistoryEntries(entries);
+        setMemberChangeHistory((prev) => [...savedEntries, ...prev]);
+        return savedEntries;
+      }
+
+      setMemberChangeHistory((prev) => [...entries, ...prev]);
+      return entries;
+    },
+    [canPersistServerHistory],
+  );
 
   return {
     actions: {

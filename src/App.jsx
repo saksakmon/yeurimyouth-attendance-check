@@ -20,7 +20,7 @@ const { useEffect, useMemo, useRef } = React;
 export default function App() {
   const auth = useAppSession();
   const router = useAppRouter();
-  const { actions: appActions, state: appState } = useAppBootstrapState();
+  const { actions: appActions, state: appState } = useAppBootstrapState(auth);
 
   const memberState = useResolvedMemberState({
     memberChangeHistory: appState.memberChangeHistory,
